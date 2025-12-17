@@ -46,6 +46,8 @@ volumes:
   sqlite-data:
 ```
 
+Make sure you also use the .env.example (copy it to .env and populate the settings)
+
 ### Useful Docker Environment Variables
 | Variable | Description | Default |
 | --- | --- | --- |
