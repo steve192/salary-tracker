@@ -2,48 +2,62 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    ":semanticCommits",
-    ":automergeRequireAllStatusChecks",
-    ":separateMultipleMajorReleases"
+    ":semanticCommits"
   ],
   "timezone": "UTC",
+  "dependencyDashboard": true,
+  "rangeStrategy": "bump",
+  "minimumReleaseAge": "7 days",
+  "platformAutomerge": true,
+  "automergeType": "branch",
   "labels": [
     "dependencies"
   ],
-  "dependencyDashboard": true,
-  "rangeStrategy": "bump",
-  "rebaseWhen": "auto",
-  "branchPrefix": "renovate/",
-  "prHourlyLimit": 4,
-  "prConcurrentLimit": 10,
-  "platformAutomerge": true,
-  "semanticCommitScope": "deps",
   "packageRules": [
     {
-      "matchManagers": ["pip_requirements"],
-      "groupName": "Python packages",
-      "matchUpdateTypes": ["minor", "patch"],
+      "description": "Safely automerge patch and digest updates",
+      "matchUpdateTypes": [
+        "patch",
+        "digest"
+      ],
       "automerge": true
     },
     {
-      "matchManagers": ["dockerfile"],
-      "groupName": "Docker base image",
-      "automerge": true,
-      "matchUpdateTypes": ["minor", "patch"]
-    },
-    {
-      "matchManagers": ["github-actions"],
-      "groupName": "GitHub Actions",
-      "matchUpdateTypes": ["minor", "patch"],
+      "description": "Python runtime/dev dependencies from pyproject (PEP 621)",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "python-dependencies",
       "automerge": true
     },
     {
-      "matchUpdateTypes": ["major"],
-      "automerge": false,
-      "labels": ["major-update"],
-      "prBodyNotes": [
-        "Major updates require manual testing before merge."
-      ]
+      "description": "Docker base images (runtime)",
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "docker-base-images",
+      "automerge": true
+    },
+    {
+      "description": "GitHub Actions workflow dependencies",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "github-actions",
+      "automerge": true
     }
   ]
 }
