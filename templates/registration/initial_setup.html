@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Initial Setup · Salary Tracker{% endblock %}
+{% block content %}
+<section>
+    <h2>Set up the first administrator</h2>
+    <p class="hint">This instance does not have any users yet. Create the initial administrator account to continue.</p>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <label>Email
+            {{ form.email }}
+            {{ form.email.errors }}
+        </label>
+        <label>Password
+            {{ form.password1 }}
+            {% if form.password1.help_text %}
+                <span class="hint">{{ form.password1.help_text|safe }}</span>
+            {% endif %}
+            {{ form.password1.errors }}
+        </label>
+        <label>Confirm password
+            {{ form.password2 }}
+            {{ form.password2.errors }}
+        </label>
+        <button type="submit">Create admin account</button>
+    </form>
+</section>
+{% endblock %}

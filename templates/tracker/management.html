@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Settings · Salary Tracker{% endblock %}
+{% block content %}
+<h2>Settings</h2>
+<p class="hint">Adjust your preferred currency and maintain your employer list. Removing an employer deletes all of its salary entries.</p>
+
+<section id="currency">
+    <header>
+        <h3>Currency</h3>
+    </header>
+    <form method="post" action="{% url 'preferences' %}" class="stacked">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'settings' %}">
+        <label>
+            {{ preference_form.currency.label }}
+            {{ preference_form.currency }}
+            {{ preference_form.currency.errors }}
+        </label>
+        <label>
+            {{ preference_form.inflation_baseline_mode.label }}
+            {{ preference_form.inflation_baseline_mode }}
+            {{ preference_form.inflation_baseline_mode.errors }}
+        </label>
+        <label>
+            {{ preference_form.inflation_source.label }}
+            {{ preference_form.inflation_source }}
+            {% if preference_form.inflation_source.help_text %}
+                <span class="hint">{{ preference_form.inflation_source.help_text }}</span>
+            {% endif %}
+            {{ preference_form.inflation_source.errors }}
+        </label>
+        <p class="hint">Admins control which inflation feeds are available and when they were last refreshed.</p>
+        <button type="submit">Save preferences</button>
+    </form>
+</section>
+
+<section id="employers">
+    <header>
+        <h3>Employers</h3>
+    </header>
+    <form method="post" action="{% url 'employer-create' %}" class="stacked">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'settings' %}">
+        {{ employer_form.name.label_tag }}
+        {{ employer_form.name }}
+        {{ employer_form.name.errors }}
+        <button type="submit">Add employer</button>
+    </form>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Salary entries</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for employer in employers %}
+            <tr>
+                <td>{{ employer.name }}</td>
+                <td>{{ employer.entry_count }}</td>
+                <td>
+                    <form method="post" action="{% url 'employer-delete' employer.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'settings' %}">
+                        <button type="submit" class="secondary">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3">No employers yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section id="inflation">
+    <header>
+        <h3>Inflation rates</h3>
+    </header>
+    <p class="hint">Inflation data is downloaded centrally by your administrator. Pick an available feed in the currency section above.</p>
+
+    <div class="inflation-summary">
+        {% if inflation_summaries %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Range</th>
+                    <th>Months stored</th>
+                    <th>Last synced</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for summary in inflation_summaries %}
+                <tr>
+                    <td>{{ summary.source }}</td>
+                    <td>{{ summary.start|date:"M Y" }} – {{ summary.end|date:"M Y" }}</td>
+                    <td>{{ summary.count }}</td>
+                    <td>{{ summary.latest_fetch|date:"Y-m-d H:i" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No inflation data stored yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="inflation-coverage">
+        <h4>Coverage check</h4>
+        {% if inflation_gap_report.has_salary_data %}
+            <p class="hint">Salary history spans {{ inflation_gap_report.start_period|date:"M Y" }} – {{ inflation_gap_report.end_period|date:"M Y" }}.</p>
+            <div class="grid">
+                {% for report in inflation_gap_report.sources %}
+                <article>
+                    <header>
+                        <strong>{{ report.label }}</strong>
+                    </header>
+                    {% if report.is_complete %}
+                        <p>All {{ report.expected_months }} months covered.</p>
+                    {% elif report.missing_months > 0 %}
+                        <p>{{ report.missing_months }} of {{ report.expected_months }} months missing:</p>
+                        <ul>
+                            {% for gap in report.missing_ranges %}
+                            <li>{{ gap.start|date:"M Y" }} – {{ gap.end|date:"M Y" }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p>No data stored yet for this time range.</p>
+                    {% endif %}
+                </article>
+                {% empty %}
+                <p class="hint">No inflation sources configured.</p>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="hint">Add salary entries to determine which months of inflation data are required.</p>
+        {% endif %}
+    </div>
+</section>
+
+<section id="account">
+    <header>
+        <h3>Account</h3>
+    </header>
+    <p class="warning">Deleting your account permanently removes all employers, salary entries, and preferences.</p>
+    <form method="post" action="{% url 'account-delete' %}" onsubmit="return confirm('Delete your account and all related data? This cannot be undone.');">
+        {% csrf_token %}
+        <button type="submit" class="secondary danger">Delete my account</button>
+    </form>
+    {% if user.is_admin %}
+        <p class="hint">You currently have admin access. Another admin must remain in the workspace before you can delete your account.</p>
+    {% endif %}
+</section>
+{% endblock %}

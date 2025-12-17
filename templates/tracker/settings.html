@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Settings · Salary Tracker{% endblock %}
+{% block content %}
+<h2>Settings</h2>
+<p class="hint">Adjust currency defaults and maintain the list of employers linked to your account.</p>
+
+<section id="currency">
+    <header>
+        <h3>Currency</h3>
+    </header>
+    <form method="post" action="{% url 'preferences' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'settings' %}">
+        {{ preference_form.currency.label_tag }}
+        {{ preference_form.currency }}
+        {{ preference_form.currency.errors }}
+        <button type="submit">Save currency</button>
+    </form>
+</section>
+
+<section id="employers">
+    <header>
+        <h3>Employers</h3>
+    </header>
+    <form method="post" action="{% url 'employer-create' %}" class="stacked">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'settings' %}">
+        {{ employer_form.name.label_tag }}
+        {{ employer_form.name }}
+        {{ employer_form.name.errors }}
+        <button type="submit">Add employer</button>
+    </form>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Salary entries</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for employer in employers %}
+            <tr>
+                <td>{{ employer.name }}</td>
+                <td>{{ employer.entry_count }}</td>
+                <td>
+                    <form method="post" action="{% url 'employer-delete' employer.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'settings' %}">
+                        <button type="submit" class="secondary">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3">No employers yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

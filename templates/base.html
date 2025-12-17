@@ -1,0 +1,50 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Salary Tracker{% endblock %}</title>
+    <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2.0.6/css/pico.min.css">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header class="container">
+        <nav>
+            {% with current=request.resolver_match.url_name %}
+            <ul>
+                <li><strong>Salary Tracker</strong></li>
+                {% if user.is_authenticated %}
+                <li><a href="{% url 'dashboard' %}" class="{% if current == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+                <li><a href="{% url 'settings' %}" class="{% if current == 'settings' %}active{% endif %}">Settings</a></li>
+                {% if user.is_admin %}
+                <li><a href="{% url 'admin-portal' %}" class="{% if current == 'admin-portal' %}active{% endif %}">Admin</a></li>
+                {% endif %}
+                {% endif %}
+            </ul>
+            <ul>
+                {% if user.is_authenticated %}
+                <li>{{ user.email }}</li>
+                <li>
+                    <form method="post" action="{% url 'logout' %}" style="display:inline">
+                        {% csrf_token %}
+                        <button type="submit" class="link">Logout</button>
+                    </form>
+                </li>
+                {% else %}
+                <li><a href="{% url 'login' %}">Login</a></li>
+                {% endif %}
+            </ul>
+            {% endwith %}
+        </nav>
+    </header>
+    <main class="container">
+        {% for message in messages %}
+            <div class="message message-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+        {% block content %}{% endblock %}
+    </main>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

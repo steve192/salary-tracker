@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Login · Salary Tracker{% endblock %}
+{% block content %}
+<section>
+    <h2>Sign in</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <label>Email
+            {{ form.username }}
+        </label>
+        <label>Password
+            {{ form.password }}
+        </label>
+        <button type="submit">Login</button>
+    </form>
+    <p>No account yet? <a href="{% url 'register' %}">Create one</a>.</p>
+</section>
+{% endblock %}

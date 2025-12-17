@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Dashboard · Salary Tracker{% endblock %}
+{% block content %}
+<p class="hint">Detected timezone: <span id="tz-display">…</span></p>
+
+<section class="dashboard-actions">
+    <article>
+        <header>
+            <strong>Currency</strong>
+            <small>Currently displaying amounts in {{ current_currency }}</small>
+        </header>
+        <a class="secondary" href="{% url 'settings' %}">Open settings</a>
+    </article>
+    <article>
+        <header>
+            <strong>Employers</strong>
+            <small>{{ employers|length }} tracked</small>
+        </header>
+        <a class="secondary" href="{% url 'settings' %}#employers">Manage employers</a>
+    </article>
+</section>
+
+<section>
+    <header>
+        <h3>Salary entries</h3>
+    </header>
+    <form method="post" action="{% url 'salary-entry-create' %}" class="stacked">
+        {% csrf_token %}
+        {{ salary_form.non_field_errors }}
+        <div class="grid">
+            <label>
+                Employer
+                <div class="quick-employer">
+                    {{ salary_form.employer_name }}
+                    <div class="quick-employer__dropdown" id="employer-suggestions" hidden></div>
+                </div>
+            </label>
+            <label>
+                Type
+                {{ salary_form.entry_type }}
+            </label>
+        </div>
+        <div class="grid">
+            <label>Effective date {{ salary_form.effective_date }}</label>
+            <label>End date {{ salary_form.end_date }}</label>
+        </div>
+        <label>Amount {{ salary_form.amount }}</label>
+        <label>Notes {{ salary_form.notes }}</label>
+        <p class="hint">Bonuses are prorated over their duration for the chart.</p>
+        <button type="submit">Save entry</button>
+    </form>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Employer</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Effective</th>
+                <th>End</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr>
+                <td>{{ entry.employer.name }}</td>
+                <td>{{ entry.get_entry_type_display }}</td>
+                <td>{{ entry.amount }} {{ current_currency }}</td>
+                <td>{{ entry.effective_date }}</td>
+                <td>{{ entry.end_date|default:"–" }}</td>
+                <td>
+                    <form method="post" action="{% url 'salary-entry-delete' entry.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" class="secondary">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">No entries yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section>
+    <header>
+        <h3>Compensation trend</h3>
+        <div class="chart-actions">
+            <button type="button" class="secondary" id="chartFullscreenToggle">Fullscreen</button>
+            <button type="button" class="secondary" id="chartZoomReset">Reset view</button>
+        </div>
+    </header>
+    <div class="chart-wrapper">
+        <canvas id="salaryChart"></canvas>
+    </div>
+</section>
+
+<section>
+    <header>
+        <h3>Employer totals to date</h3>
+    </header>
+    {% if employer_summaries %}
+    <table>
+        <thead>
+            <tr>
+                <th>Employer</th>
+                <th>Actual compensation</th>
+                <th>Inflation baseline</th>
+                <th>Δ vs inflation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for summary in employer_summaries %}
+            <tr>
+                <td>{{ summary.employer_name }}</td>
+                <td>{{ summary.actual_total|floatformat:2 }} {{ current_currency }}</td>
+                <td>
+                    {% if summary.inflation_ready %}
+                        {{ summary.inflation_total|floatformat:2 }} {{ current_currency }}
+                    {% elif summary.inflation_message %}
+                        <span class="hint">{{ summary.inflation_message }}</span>
+                    {% else %}
+                        <span class="hint">Inflation projection unavailable.</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if summary.delta_amount is not None %}
+                        <span class="delta-badge {% if summary.delta_state == 'gain' %}delta-badge--gain{% elif summary.delta_state == 'loss' %}delta-badge--loss{% else %}delta-badge--even{% endif %}">
+                            {% if summary.delta_state == 'gain' %}+{% elif summary.delta_state == 'loss' %}−{% endif %}{{ summary.delta_amount|floatformat:2 }} {{ current_currency }}
+                        </span>
+                    {% else %}
+                        <span class="hint">–</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="hint">Add entries to see per-employer totals.</p>
+    {% endif %}
+</section>
+
+{{ timeline|json_script:"timeline-data" }}
+{{ employer_names|json_script:"employer-names-data" }}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

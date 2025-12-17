@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Welcome · Salary Tracker{% endblock %}
+{% block content %}
+<section>
+    <h2>Choose your preferences</h2>
+    <p class="hint">Select your default currency, how inflation should be calculated, and which shared inflation source to use. You can change these later in Settings.</p>
+    <form method="post" class="stacked">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <label>
+            {{ form.currency.label }}
+            {{ form.currency }}
+            {{ form.currency.errors }}
+        </label>
+        <label>
+            {{ form.inflation_baseline_mode.label }}
+            {{ form.inflation_baseline_mode }}
+            {{ form.inflation_baseline_mode.errors }}
+        </label>
+        <label>
+            {{ form.inflation_source.label }}
+            {{ form.inflation_source }}
+            {% if form.inflation_source.help_text %}
+                <span class="hint">{{ form.inflation_source.help_text }}</span>
+            {% endif %}
+            {{ form.inflation_source.errors }}
+        </label>
+        <button type="submit">Save and continue</button>
+    </form>
+</section>
+{% endblock %}

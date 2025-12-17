@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Admin Portal{% endblock %}
+{% block content %}
+<h1>Admin Portal</h1>
+<p class="muted">Manage users, permissions, and inflation sources.</p>
+<section>
+    <article>
+        <header>
+            <h2>Platform Overview</h2>
+        </header>
+        <ul>
+            <li>Total users: {{ managed_users|length }}</li>
+            <li>Admin users: {{ admin_count }}</li>
+        </ul>
+    </article>
+</section>
+<section>
+    <h2>Users</h2>
+    {% if managed_users %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Employers</th>
+                    <th>Salary Entries</th>
+                    <th>Admin</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in managed_users %}
+                <tr>
+                    <td>{{ account.email }}</td>
+                    <td>{{ account.employer_count }}</td>
+                    <td>{{ account.entry_count }}</td>
+                    <td>{% if account.is_admin %}Yes{% else %}No{% endif %}</td>
+                    <td>
+                        {% if account == request.user %}
+                            <em>This is you</em>
+                        {% else %}
+                            <div class="admin-actions">
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="user_id" value="{{ account.id }}">
+                                    {% if account.is_admin %}
+                                        <input type="hidden" name="action" value="demote-user">
+                                        <button type="submit">Remove Admin</button>
+                                    {% else %}
+                                        <input type="hidden" name="action" value="promote-user">
+                                        <button type="submit">Make Admin</button>
+                                    {% endif %}
+                                </form>
+                                <form method="post" onsubmit="return confirm('Delete {{ account.email }}?');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete-user">
+                                    <input type="hidden" name="user_id" value="{{ account.id }}">
+                                    <button type="submit" class="secondary">Delete</button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No user records found.</p>
+    {% endif %}
+</section>
+<section>
+    <h2>Inflation Sources</h2>
+    {% if inflation_sources %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Records</th>
+                    <th>Range</th>
+                    <th>Available</th>
+                    <th>Active</th>
+                    <th>Last Fetch</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in inflation_sources %}
+                <tr>
+                    <td>{{ row.obj.label }}</td>
+                    <td>{{ row.count }}</td>
+                    <td>
+                        {% if row.has_data %}
+                        {{ row.start|date:"Y-m" }} – {{ row.end|date:"Y-m" }}
+                        {% else %}
+                        Not loaded
+                        {% endif %}
+                    </td>
+                    <td>{% if row.available %}Yes{% else %}No{% endif %}</td>
+                    <td>{% if row.active %}Yes{% else %}No{% endif %}</td>
+                    <td>{% if row.latest_fetch %}{{ row.latest_fetch|date:"Y-m-d H:i" }}{% else %}—{% endif %}</td>
+                    <td>
+                        <div class="admin-actions">
+                            <form method="post">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="fetch-source">
+                                <input type="hidden" name="source_id" value="{{ row.obj.id }}">
+                                <button type="submit">Refresh</button>
+                            </form>
+                            <form method="post">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="toggle-source-availability">
+                                <input type="hidden" name="source_id" value="{{ row.obj.id }}">
+                                <button type="submit">{% if row.available %}Hide from Users{% else %}Publish to Users{% endif %}</button>
+                            </form>
+                            <form method="post">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="toggle-source-active">
+                                <input type="hidden" name="source_id" value="{{ row.obj.id }}">
+                                <button type="submit">{% if row.active %}Deactivate{% else %}Activate{% endif %}</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No inflation sources configured.</p>
+    {% endif %}
+</section>
+    <section>
+        <h2>Add Inflation Source</h2>
+        {% if source_choices %}
+        <form method="post" class="admin-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create-source">
+            <label>Source code
+                <select name="code" required>
+                    <option value="">Select…</option>
+                    {% for option in source_choices %}
+                    <option value="{{ option.code }}">{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Display label
+                <input type="text" name="label" placeholder="Shown to admins/users" required>
+            </label>
+            <label>Description
+                <input type="text" name="description" placeholder="Optional context">
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="available_to_users"> Available to end users immediately
+            </label>
+            <button type="submit">Add Source</button>
+        </form>
+        {% else %}
+        <p>All built-in sources are already configured.</p>
+        {% endif %}
+    </section>
+{% endblock %}

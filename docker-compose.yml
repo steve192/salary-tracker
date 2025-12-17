@@ -1,0 +1,17 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DJANGO_DB_PATH: /app/data/db.sqlite3
+    volumes:
+      - sqlite-data:/app/data
+      - static-data:/app/staticfiles
+    restart: unless-stopped
+
+volumes:
+  sqlite-data:
+  static-data:

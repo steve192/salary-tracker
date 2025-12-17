@@ -1,0 +1,75 @@
+# Salary Tracker
+
+A lightweight Django web application for tracking salary history across multiple employers. You can log raises and bonuses, visualize trends, compare your salary to inflation and keep track on all of that
+
+## Features
+- Employer management and salary entries (regular raises + time-bound bonuses).
+- Compare salary development to inflation (currently only inflation rates of the european union available)
+
+## Quick Start (Docker)
+1. Copy the sample environment file and adjust values:
+   ```bash
+   cp .env.example .env
+   ```
+   Set a strong `DJANGO_SECRET_KEY` and the credentials for the bootstrap user (`INITIAL_USER_EMAIL` / `INITIAL_USER_PASSWORD`).
+
+2. Build and run the container:
+   ```bash
+   docker compose up --build
+   ```
+
+3. Open http://localhost:8000 and log in with the initial user credentials. The container:
+   - Creates `/app/data/db.sqlite3` (persisted via the `sqlite-data` volume)
+   - Applies migrations
+   - Creates the initial user and preference row if missing
+   - Collects static assets into `/app/staticfiles` (also persisted)
+   - Starts Gunicorn on port 8000
+
+4. Add employers and salary entries from the dashboard. The chart updates immediately based on the stored data.
+
+## Ready to use docker-compose 
+```
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DJANGO_DB_PATH: /app/data/db.sqlite3
+    volumes:
+      - sqlite-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  sqlite-data:
+```
+
+### Useful Docker Environment Variables
+| Variable | Description | Default |
+| --- | --- | --- |
+| `DJANGO_SECRET_KEY` | Secret key for Django session signing—always override in production. | `insecure-change-me` |
+| `DJANGO_DEBUG` | Enables Django debug features and auto-reload; keep `false` in production. | `false` |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames accepted when `DJANGO_DEBUG=false`. | `*` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | HTTPS origins allowed for CSRF-protected requests (needed behind reverse proxies). | unset |
+| `DJANGO_TIME_ZONE` | Forces backend timezone; falls back to the host timezone if unset. | system tz |
+| `DJANGO_DB_PATH` | SQLite path; Compose defaults to `/app/data/db.sqlite3` for persistence. | `<project>/db.sqlite3` |
+| `DJANGO_FORCE_SCRIPT_NAME` | URL prefix when hosting under a sub-path (e.g., `/salary`). | unset |
+| `DJANGO_STATIC_URL` | Static asset base URL; override for CDNs or when `DJANGO_FORCE_SCRIPT_NAME` is set. | derived |
+| `DJANGO_MEDIA_URL` | Media asset base URL; override for CDNs or when `DJANGO_FORCE_SCRIPT_NAME` is set. | derived |
+| `DJANGO_LOG_LEVEL` | Console logging verbosity (`DEBUG`, `INFO`, etc.). | `INFO` |
+| `GUNICORN_WORKERS` | Gunicorn worker process count. | `3` |
+
+## Local Development (without Docker)
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+cp .env.example .env  # adjust values as needed
+python manage.py migrate
+python manage.py runserver
+```
+
+During local development you can leave `DJANGO_DB_PATH` unset to keep the SQLite file at the project root. Static assets are served via Django + Whitenoise, so no extra tooling is needed.
