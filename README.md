@@ -2,6 +2,7 @@
 
 A lightweight Django web application for tracking salary history across multiple employers. You can log raises and bonuses, visualize trends, compare your salary to inflation and keep track on all of that
 
+![Manual approval screen](docs/salary-tracker.png)
 ## Features
 - Employer management and salary entries (regular raises + time-bound bonuses).
 - Compare salary development to inflation (currently only inflation rates of the european union available)
