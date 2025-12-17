@@ -9,9 +9,7 @@ services:
       DJANGO_DB_PATH: /app/data/db.sqlite3
     volumes:
       - sqlite-data:/app/data
-      - static-data:/app/staticfiles
     restart: unless-stopped
 
 volumes:
   sqlite-data:
-  static-data:

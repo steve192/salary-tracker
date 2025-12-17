@@ -31,7 +31,7 @@ A lightweight Django web application for tracking salary history across multiple
 ```
 services:
   web:
-    build: .
+    image: ghcr.io/steve192/salary-tracker
     ports:
       - "8000:8000"
     env_file:
