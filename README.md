@@ -12,21 +12,18 @@ A lightweight Django web application for tracking salary history across multiple
    ```bash
    cp .env.example .env
    ```
-   Set a strong `DJANGO_SECRET_KEY` and the credentials for the bootstrap user (`INITIAL_USER_EMAIL` / `INITIAL_USER_PASSWORD`).
+   Set a strong `DJANGO_SECRET_KEY`
 
 2. Build and run the container:
    ```bash
    docker compose up --build
    ```
 
-3. Open http://localhost:8000 and log in with the initial user credentials. The container:
-   - Creates `/app/data/db.sqlite3` (persisted via the `sqlite-data` volume)
-   - Applies migrations
-   - Creates the initial user and preference row if missing
-   - Collects static assets into `/app/staticfiles` (also persisted)
-   - Starts Gunicorn on port 8000
+3. Open http://localhost:8000 and log create your initial user. 
 
-4. Add employers and salary entries from the dashboard. The chart updates immediately based on the stored data.
+5. Go to admin settings and add an inflation index. Then press refresh to download current inflation data
+6. Go to your personal settings and apply the inflation index you just downloaded
+6. Add employers and salary entries from the dashboard. The chart updates immediately based on the stored data.
 
 ## Ready to use docker-compose 
 ```
@@ -62,6 +59,7 @@ Make sure you also use the .env.example (copy it to .env and populate the settin
 | `DJANGO_STATIC_URL` | Static asset base URL; override for CDNs or when `DJANGO_FORCE_SCRIPT_NAME` is set. | derived |
 | `DJANGO_MEDIA_URL` | Media asset base URL; override for CDNs or when `DJANGO_FORCE_SCRIPT_NAME` is set. | derived |
 | `DJANGO_LOG_LEVEL` | Console logging verbosity (`DEBUG`, `INFO`, etc.). | `INFO` |
+| `DJANGO_ALLOW_SELF_REGISTRATION` | Enables the public `/accounts/register/` form; keep `false` to require admins to onboard users manually. | `false` |
 | `GUNICORN_WORKERS` | Gunicorn worker process count. | `3` |
 
 ## Local Development (without Docker)
