@@ -18,7 +18,7 @@
 | `User` | email, password, `is_admin`, `is_staff`, `is_superuser`, timestamps | Email replaces username; first account is auto-promoted to admin.
 | `Employer` | FK to `User`, `name`, timestamps | Names are unique per user and power employer filtering.
 | `SalaryEntry` | FK to `User` & `Employer`, `entry_type`, `effective_date`, optional `end_date`, `amount`, `notes` | `REGULAR` rows define baseline pay; `BONUS` rows require `end_date` and are amortized over their span.
-| `UserPreference` | one-to-one to `User`, `currency`, `inflation_baseline_mode`, FK to `InflationSource` | Stores UI currency plus the selected shared CPI source and baseline behavior.
+| `UserPreference` | one-to-one to `User`, `currency`, `inflation_baseline_mode`, FK to `SalaryEntry` + `InflationSource` | Stores UI currency, the CPI source, and either implicit (global/per-employer/last increase) or manual baseline behavior.
 | `InflationSource` | `code`, `label`, `description`, `is_active`, `available_to_users` | Global CPI feed definitions (e.g., ECB Germany). Admins can toggle availability and activity.
 | `InflationRate` | FK to `InflationSource`, `period`, `index_value`, metadata JSON, `fetched_at` | Shared CPI index values per month; upserted when admins refresh a source.
 
@@ -26,7 +26,7 @@
 1. Build a contiguous month range from the earliest salary `effective_date` through the latest `end_date` (or the current month if still active).
 2. Track the latest active `REGULAR` entry for each month to produce the base salary line, then add any prorated `BONUS` rows for the total compensation line.
 3. Emit JSON payloads containing labels, base/total series, bonus windows, and employer-switch annotations; Chart.js consumes this payload via `/api/salary-timeline/`.
-4. If the user has selected an inflation source, `_inflation_projection` compares actual pay to CPI-adjusted values. Users can choose a global baseline (first salary ever) or a per-employer baseline (first salary per employer) via `inflation_baseline_mode`.
+4. If the user has selected an inflation source, `_inflation_projection` compares actual pay to CPI-adjusted values. Users can choose whole-history, per-employer, last increase, or manual baseline anchors via `inflation_baseline_mode`.
 5. Employer summaries reuse the same CPI data to label each employer as a gain/loss/even versus inflation and surface explanatory messages when CPI is missing.
 
 ## UI & Workflows

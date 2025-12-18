@@ -83,6 +83,93 @@ class BuildSalaryTimelineTests(TestCase):
             [{"label": "Jan 2024", "employer": "Globex"}],
         )
 
+    def test_last_increase_mode_targets_latest_raise(self):
+        first_entry = SalaryEntry.objects.create(
+            user=self.user,
+            employer=self.employer,
+            entry_type=SalaryEntry.EntryType.REGULAR,
+            effective_date=date(2023, 1, 1),
+            end_date=date(2023, 12, 31),
+            amount=Decimal("800.00"),
+        )
+        second_entry = SalaryEntry.objects.create(
+            user=self.user,
+            employer=self.employer,
+            entry_type=SalaryEntry.EntryType.REGULAR,
+            effective_date=date(2024, 6, 1),
+            end_date=date(2024, 12, 31),
+            amount=Decimal("1400.00"),
+        )
+        self.assertIsNotNone(first_entry)
+        self.assertIsNotNone(second_entry)
+        for year in (2023, 2024):
+            for month in range(1, 13):
+                InflationRate.objects.create(
+                    source=self.source,
+                    period=date(year, month, 1),
+                    index_value=Decimal("100.0") + Decimal(str((year - 2023) * 12 + month)),
+                )
+
+        payload = build_salary_timeline(
+            self.user,
+            UserPreference.InflationBaselineMode.LAST_INCREASE,
+            self.source,
+        )
+        meta = payload["inflationMeta"]
+        self.assertEqual(meta["mode"], UserPreference.InflationBaselineMode.LAST_INCREASE)
+        self.assertIsNone(meta["baseLabel"])
+        self.assertIsNone(meta["baseSalary"])
+        self.assertTrue(all(value is not None for value in payload["inflationSeries"]))
+
+        jan_index = payload["labels"].index("Jan 2023")
+        jun_index = payload["labels"].index("Jun 2024")
+        self.assertEqual(payload["inflationSeries"][jan_index], float(first_entry.amount))
+        self.assertEqual(payload["inflationSeries"][jun_index], float(second_entry.amount))
+
+    def test_manual_mode_requires_selection(self):
+        base_entry = SalaryEntry.objects.create(
+            user=self.user,
+            employer=self.employer,
+            entry_type=SalaryEntry.EntryType.REGULAR,
+            effective_date=date(2024, 3, 1),
+            end_date=date(2024, 5, 31),
+            amount=Decimal("1250.00"),
+        )
+        SalaryEntry.objects.create(
+            user=self.user,
+            employer=self.employer,
+            entry_type=SalaryEntry.EntryType.REGULAR,
+            effective_date=date(2024, 6, 1),
+            end_date=date(2024, 8, 31),
+            amount=Decimal("1500.00"),
+        )
+        for month_offset in range(1, 9):
+            InflationRate.objects.create(
+                source=self.source,
+                period=date(2024, month_offset, 1),
+                index_value=Decimal("100.0") + Decimal(str(month_offset)),
+            )
+
+        payload = build_salary_timeline(
+            self.user,
+            UserPreference.InflationBaselineMode.MANUAL,
+            self.source,
+            manual_entry=base_entry,
+        )
+        meta = payload["inflationMeta"]
+        self.assertTrue(meta["ready"])
+        self.assertEqual(meta["manualEntryId"], base_entry.id)
+        self.assertEqual(meta["baseLabel"], "Mar 2024")
+        empty_months = [value for idx, value in enumerate(payload["inflationSeries"]) if payload["labels"][idx] in {"Jan 2024", "Feb 2024"}]
+        self.assertTrue(all(value is None for value in empty_months))
+
+        payload_missing = build_salary_timeline(
+            self.user,
+            UserPreference.InflationBaselineMode.MANUAL,
+            self.source,
+        )
+        self.assertEqual(payload_missing["inflationMeta"]["reason"], "manual-baseline-unset")
+
 class EmployerCompensationSummaryTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(email="summary@example.com", password="pass12345")

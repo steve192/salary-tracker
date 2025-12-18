@@ -5,7 +5,7 @@
 - Custom email-based `User` model with `is_admin` flag; first registered user becomes an admin automatically.
 - Employers are stored separately so entries can reuse them; duplicates per user are prevented.
 - Salary entries support `REGULAR` and `BONUS` types, optional `end_date`, notes, and automatic validation (bonus rows must have an end date, `end_date` cannot precede `effective_date`).
-- `UserPreference` stores currency, inflation baseline mode (global vs per-employer), and the selected shared inflation source.
+- `UserPreference` stores currency, inflation baseline mode (whole history, per-employer, last increase, manual), the selected shared inflation source, and (for manual mode) the chosen baseline entry.
 
 ## Dashboard Experience
 - Quick salary entry form with autocomplete-style employer field that creates missing employers on the fly.

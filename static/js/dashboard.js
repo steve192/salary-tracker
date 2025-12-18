@@ -180,8 +180,21 @@ document.addEventListener("DOMContentLoaded", () => {
         Array.isArray(timeline.inflationSeries) &&
         timeline.inflationSeries.some((value) => typeof value === "number");
     if (hasInflationSeries) {
+        const inflationLabel = (() => {
+            const mode = timeline.inflationMeta?.mode;
+            switch (mode) {
+                case "PER_EMPLOYER":
+                    return "Inflation-adjusted per-employer baseline";
+                case "LAST_INCREASE":
+                    return "Inflation-adjusted raise segments";
+                case "MANUAL":
+                    return "Inflation-adjusted custom baseline";
+                default:
+                    return "Inflation-adjusted initial salary";
+            }
+        })();
         datasets.push({
-            label: "Inflation-adjusted initial salary",
+            label: inflationLabel,
             data: timeline.inflationSeries,
             borderColor: "#0ea5e9",
             borderWidth: 2,

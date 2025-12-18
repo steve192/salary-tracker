@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from django.utils import timezone
 
@@ -17,6 +17,14 @@ class TimelinePoint:
     base_amount: Decimal
     total_amount: Decimal
     employer_id: Optional[int]
+
+
+@dataclass
+class BaselineSetup:
+    selector: Callable[[TimelinePoint], Tuple[Optional[TimelinePoint], Optional[Decimal]]]
+    base_label: Optional[str]
+    base_salary: Optional[float]
+    skip_prehistory: bool
 
 
 @dataclass
@@ -53,6 +61,8 @@ INFLATION_REASON_MESSAGES = {
     "missing-baseline-index": "Inflation data missing for the first salary month.",
     "missing-series-data": "Inflation data missing for part of this period.",
     "no-source-selected": "Select an inflation source in Settings to enable this comparison.",
+    "manual-baseline-unset": "Select an inflation baseline entry in the salary table.",
+    "manual-baseline-invalid": "The selected manual inflation baseline is no longer available.",
 }
 
 
@@ -90,85 +100,154 @@ def _month_span_count(start: date, end: date) -> int:
     return (end.year - start.year) * 12 + (end.month - start.month) + 1
 
 
-def _inflation_projection(
-    user,
-    timeline: List[TimelinePoint],
-    window: Tuple[date, date],
-    baseline_mode: Optional[str],
-    source: Optional[InflationSource],
-) -> Tuple[List[float | None], Dict[str, str | float | bool | None]]:
-    meta: Dict[str, str | float | bool | None] = {
-        "ready": False,
-        "source": source.label if source else None,
-        "reason": None,
-        "baseLabel": None,
-        "baseSalary": None,
-        "mode": baseline_mode,
-    }
-    if not timeline:
-        meta["reason"] = "missing-timeline"
-        return [], meta
-
-    if not source:
-        meta["reason"] = "no-source-selected"
-        return [], meta
-
-    start_date, end_date = window
+def _build_rate_map(source: InflationSource, start_date: date, end_date: date) -> Dict[date, Decimal]:
     rates = (
-        InflationRate.objects.filter(
-            source=source,
-            period__gte=start_date,
-            period__lte=end_date,
-        )
+        InflationRate.objects.filter(source=source, period__gte=start_date, period__lte=end_date)
         .only("period", "index_value")
         .order_by("period")
     )
-    rate_map = {rate.period: rate.index_value for rate in rates}
+    return {rate.period: rate.index_value for rate in rates}
 
-    baseline_mode = baseline_mode or UserPreference.InflationBaselineMode.GLOBAL
-    meta["mode"] = baseline_mode
-    per_employer_mode = baseline_mode == UserPreference.InflationBaselineMode.PER_EMPLOYER
 
-    first_salary_point: Optional[TimelinePoint] = None
-    base_index: Optional[Decimal] = None
+def _build_baseline_setup(
+    timeline: List[TimelinePoint],
+    baseline_mode: str,
+    rate_map: Dict[date, Decimal],
+    manual_entry: Optional[SalaryEntry],
+) -> Tuple[Optional[BaselineSetup], Optional[str]]:
+    if baseline_mode == UserPreference.InflationBaselineMode.PER_EMPLOYER:
+        return _baseline_per_employer_setup(timeline, rate_map)
+    if baseline_mode == UserPreference.InflationBaselineMode.MANUAL:
+        return _baseline_manual_setup(timeline, rate_map, manual_entry)
+    if baseline_mode == UserPreference.InflationBaselineMode.LAST_INCREASE:
+        return _baseline_last_increase_setup(timeline, rate_map)
+    return _baseline_global_setup(timeline, rate_map)
+
+
+def _baseline_per_employer_setup(
+    timeline: List[TimelinePoint],
+    rate_map: Dict[date, Decimal],
+) -> Tuple[Optional[BaselineSetup], Optional[str]]:
     per_employer_points: Dict[int, TimelinePoint] = {}
     per_employer_base_index: Dict[int, Decimal] = {}
+    for point in timeline:
+        if point.employer_id and point.base_amount > 0 and point.employer_id not in per_employer_points:
+            per_employer_points[point.employer_id] = point
+            idx = rate_map.get(point.period)
+            if idx:
+                per_employer_base_index[point.employer_id] = idx
+    if not per_employer_points:
+        return None, "no-regular-salary"
+    if len(per_employer_base_index) != len(per_employer_points):
+        return None, "missing-baseline-index"
 
-    if per_employer_mode:
-        for point in timeline:
-            if point.employer_id and point.base_amount > 0 and point.employer_id not in per_employer_points:
-                per_employer_points[point.employer_id] = point
-                idx = rate_map.get(point.period)
-                if idx:
-                    per_employer_base_index[point.employer_id] = idx
-        if not per_employer_points:
-            meta["reason"] = "no-regular-salary"
-            return [], meta
-        if len(per_employer_base_index) != len(per_employer_points):
-            meta["reason"] = "missing-baseline-index"
-            return [], meta
-    else:
-        first_salary_point = next((point for point in timeline if point.base_amount > 0), None)
-        if not first_salary_point:
-            meta["reason"] = "no-regular-salary"
-            return [], meta
-        base_index = rate_map.get(first_salary_point.period)
-        if not base_index:
-            meta["reason"] = "missing-baseline-index"
-            return [], meta
+    def selector(point: TimelinePoint) -> Tuple[Optional[TimelinePoint], Optional[Decimal]]:
+        employer_id = point.employer_id
+        return per_employer_points.get(employer_id), per_employer_base_index.get(employer_id)
 
+    setup = BaselineSetup(selector=selector, base_label=None, base_salary=None, skip_prehistory=False)
+    return setup, None
+
+
+def _baseline_manual_setup(
+    timeline: List[TimelinePoint],
+    rate_map: Dict[date, Decimal],
+    manual_entry: Optional[SalaryEntry],
+) -> Tuple[Optional[BaselineSetup], Optional[str]]:
+    if manual_entry is None or manual_entry.entry_type != SalaryEntry.EntryType.REGULAR:
+        return None, "manual-baseline-unset"
+    manual_period = _month_start(manual_entry.effective_date)
+    selected_point = next((point for point in timeline if point.period == manual_period), None)
+    if not selected_point or selected_point.base_amount <= 0:
+        return None, "manual-baseline-invalid"
+    base_index = rate_map.get(selected_point.period)
+    if not base_index:
+        return None, "missing-baseline-index"
+
+    def selector(_: TimelinePoint) -> Tuple[Optional[TimelinePoint], Optional[Decimal]]:
+        return selected_point, base_index
+
+    setup = BaselineSetup(
+        selector=selector,
+        base_label=selected_point.label,
+        base_salary=float(selected_point.base_amount),
+        skip_prehistory=True,
+    )
+    return setup, None
+
+
+def _baseline_last_increase_setup(
+    timeline: List[TimelinePoint],
+    rate_map: Dict[date, Decimal],
+) -> Tuple[Optional[BaselineSetup], Optional[str]]:
+    raise_points: Dict[date, TimelinePoint] = {}
+    raise_indexes: Dict[date, Decimal] = {}
+    previous_amount: Optional[Decimal] = None
+    for point in timeline:
+        if point.base_amount > 0 and (previous_amount is None or point.base_amount != previous_amount):
+            idx = rate_map.get(point.period)
+            if not idx:
+                return None, "missing-baseline-index"
+            raise_points[point.period] = point
+            raise_indexes[point.period] = idx
+            previous_amount = point.base_amount
+    if not raise_points:
+        return None, "no-regular-salary"
+
+    base_map: Dict[date, Tuple[Optional[TimelinePoint], Optional[Decimal]]] = {}
+    active_point: Optional[TimelinePoint] = None
+    active_idx: Optional[Decimal] = None
+    for point in timeline:
+        maybe_raise = raise_points.get(point.period)
+        if maybe_raise:
+            active_point = maybe_raise
+            active_idx = raise_indexes.get(point.period)
+        base_map[point.period] = (active_point, active_idx)
+
+    def selector(point: TimelinePoint) -> Tuple[Optional[TimelinePoint], Optional[Decimal]]:
+        return base_map.get(point.period, (None, None))
+
+    setup = BaselineSetup(selector=selector, base_label=None, base_salary=None, skip_prehistory=True)
+    return setup, None
+
+
+def _baseline_global_setup(
+    timeline: List[TimelinePoint],
+    rate_map: Dict[date, Decimal],
+) -> Tuple[Optional[BaselineSetup], Optional[str]]:
+    first_salary_point = next((point for point in timeline if point.base_amount > 0), None)
+    if not first_salary_point:
+        return None, "no-regular-salary"
+    base_index = rate_map.get(first_salary_point.period)
+    if not base_index:
+        return None, "missing-baseline-index"
+
+    def selector(_: TimelinePoint) -> Tuple[Optional[TimelinePoint], Optional[Decimal]]:
+        return first_salary_point, base_index
+
+    setup = BaselineSetup(
+        selector=selector,
+        base_label=first_salary_point.label,
+        base_salary=float(first_salary_point.base_amount),
+        skip_prehistory=True,
+    )
+    return setup, None
+
+
+def _build_inflation_series(
+    timeline: List[TimelinePoint],
+    rate_map: Dict[date, Decimal],
+    setup: BaselineSetup,
+) -> List[float | None]:
     inflation_series: List[float | None] = []
     quantizer = Decimal("0.01")
     for point in timeline:
-        if per_employer_mode:
-            employer_id = point.employer_id
-            base_point = per_employer_points.get(employer_id) if employer_id else None
-            base_idx = per_employer_base_index.get(employer_id) if employer_id else None
-        else:
-            base_point = first_salary_point
-            base_idx = base_index
-
+        base_point, base_idx = setup.selector(point)
         if not base_point or not base_idx:
+            inflation_series.append(None)
+            continue
+
+        if setup.skip_prehistory and point.period < base_point.period:
             inflation_series.append(None)
             continue
 
@@ -180,76 +259,131 @@ def _inflation_projection(
         multiplier = period_index / base_idx
         inflation_value = (base_point.base_amount * multiplier).quantize(quantizer)
         inflation_series.append(float(inflation_value))
+    return inflation_series
 
+
+def _inflation_projection(
+    user,
+    timeline: List[TimelinePoint],
+    window: Tuple[date, date],
+    baseline_mode: Optional[str],
+    source: Optional[InflationSource],
+    manual_entry: Optional[SalaryEntry] = None,
+) -> Tuple[List[float | None], Dict[str, str | float | bool | None]]:
+    meta: Dict[str, str | float | bool | None] = {
+        "ready": False,
+        "source": source.label if source else None,
+        "reason": None,
+        "baseLabel": None,
+        "baseSalary": None,
+        "mode": baseline_mode,
+        "manualEntryId": manual_entry.id if manual_entry else None,
+    }
+    if not timeline:
+        meta["reason"] = "missing-timeline"
+        return [], meta
+
+    if not source:
+        meta["reason"] = "no-source-selected"
+        return [], meta
+
+    start_date, end_date = window
+    rate_map = _build_rate_map(source, start_date, end_date)
+
+    baseline_mode = baseline_mode or UserPreference.InflationBaselineMode.GLOBAL
+    meta["mode"] = baseline_mode
+    setup, reason = _build_baseline_setup(timeline, baseline_mode, rate_map, manual_entry)
+    if reason or not setup:
+        meta["reason"] = reason
+        return [], meta
+
+    inflation_series = _build_inflation_series(timeline, rate_map, setup)
     if not any(value is not None for value in inflation_series):
         meta["reason"] = "missing-series-data"
         return inflation_series, meta
 
-    if per_employer_mode:
-        meta.update(
-            {
-                "ready": True,
-                "reason": None,
-                "baseLabel": None,
-                "baseSalary": None,
-            }
-        )
-    else:
-        meta.update(
-            {
-                "ready": True,
-                "reason": None,
-                "baseLabel": first_salary_point.label if first_salary_point else None,
-                "baseSalary": float(first_salary_point.base_amount) if first_salary_point else None,
-            }
-        )
+    meta.update(
+        {
+            "ready": True,
+            "reason": None,
+            "baseLabel": setup.base_label,
+            "baseSalary": setup.base_salary,
+        }
+    )
     return inflation_series, meta
 
 
-def build_salary_timeline(
+def _resolve_timeline_inputs(
     user,
-    baseline_mode: Optional[str] = None,
-    inflation_source: Optional[InflationSource] = None,
-) -> Dict[str, List]:
-    preferences = None
-    if baseline_mode is None or inflation_source is None:
+    baseline_mode: Optional[str],
+    inflation_source: Optional[InflationSource],
+    manual_entry: Optional[SalaryEntry],
+) -> Tuple[Optional[str], Optional[InflationSource], Optional[SalaryEntry]]:
+    resolved_mode = baseline_mode
+    resolved_source = inflation_source
+    resolved_manual = manual_entry
+    if baseline_mode is None or inflation_source is None or manual_entry is None:
         preferences, _ = UserPreference.objects.get_or_create(user=user)
-        if baseline_mode is None:
-            baseline_mode = preferences.inflation_baseline_mode
-        if inflation_source is None:
-            inflation_source = preferences.inflation_source
+        if resolved_mode is None:
+            resolved_mode = preferences.inflation_baseline_mode
+        if resolved_source is None:
+            resolved_source = preferences.inflation_source
+        if resolved_manual is None:
+            resolved_manual = preferences.inflation_manual_entry
+    return resolved_mode, resolved_source, resolved_manual
 
-    entries = list(
-        SalaryEntry.objects.filter(user=user)
-        .select_related("employer")
-        .order_by("effective_date", "created_at")
-    )
-    if not entries:
-        return {
-            "labels": [],
-            "baseSeries": [],
-            "totalSeries": [],
-            "bonusWindows": [],
-            "inflationSeries": [],
-            "inflationMeta": {
-                "ready": False,
-                "source": inflation_source.label if inflation_source else None,
-                "reason": "missing-timeline",
-                "baseLabel": None,
-                "baseSalary": None,
-                "mode": baseline_mode,
-            },
-            "employerSwitches": [],
-        }
 
+def _empty_timeline_payload(
+    baseline_mode: Optional[str],
+    inflation_source: Optional[InflationSource],
+    manual_entry: Optional[SalaryEntry],
+) -> Dict[str, List]:
+    return {
+        "labels": [],
+        "baseSeries": [],
+        "totalSeries": [],
+        "bonusWindows": [],
+        "inflationSeries": [],
+        "inflationMeta": {
+            "ready": False,
+            "source": inflation_source.label if inflation_source else None,
+            "reason": "missing-timeline",
+            "baseLabel": None,
+            "baseSalary": None,
+            "mode": baseline_mode,
+            "manualEntryId": manual_entry.id if manual_entry else None,
+        },
+        "employerSwitches": [],
+    }
+
+
+def _build_timeline_components(entries: List[SalaryEntry]) -> Tuple[
+    List[TimelinePoint], date, date, List[Dict[str, Optional[str]]], List[Dict[str, str]]
+]:
     start_date = _month_start(entries[0].effective_date)
     latest_relevant = max(entry.end_date or timezone.now().date() for entry in entries)
     end_date = _month_start(latest_relevant)
-
     regular_entries = [entry for entry in entries if entry.entry_type == SalaryEntry.EntryType.REGULAR]
     bonus_entries = [entry for entry in entries if entry.entry_type == SalaryEntry.EntryType.BONUS]
     employer_name_map = {entry.employer_id: entry.employer.name for entry in entries}
+    timeline, employer_switches = _assemble_timeline_points(
+        regular_entries,
+        bonus_entries,
+        start_date,
+        end_date,
+        employer_name_map,
+    )
+    bonus_windows = _build_bonus_windows(bonus_entries)
+    return timeline, start_date, end_date, bonus_windows, employer_switches
 
+
+def _assemble_timeline_points(
+    regular_entries: List[SalaryEntry],
+    bonus_entries: List[SalaryEntry],
+    start_date: date,
+    end_date: date,
+    employer_name_map: Dict[int, str],
+) -> Tuple[List[TimelinePoint], List[Dict[str, str]]]:
     timeline: List[TimelinePoint] = []
     employer_switches: List[Dict[str, str]] = []
     active_regular = None
@@ -258,14 +392,9 @@ def build_salary_timeline(
 
     current = start_date
     while current <= end_date:
-        while regular_index < len(regular_entries) and regular_entries[regular_index].effective_date <= current:
-            active_regular = regular_entries[regular_index]
-            regular_index += 1
-        if active_regular and active_regular.end_date and active_regular.end_date < current:
-            active_regular = None
-
+        active_regular, regular_index = _advance_regular_pointer(current, regular_entries, regular_index, active_regular)
         base_amount = active_regular.amount if active_regular else Decimal("0")
-        bonus_total = Decimal("0")
+        bonus_total = _monthly_bonus_allocation(current, bonus_entries)
         current_employer_id = active_regular.employer_id if active_regular else None
         if current_employer_id and current_employer_id != previous_employer_id:
             employer_switches.append(
@@ -275,19 +404,14 @@ def build_salary_timeline(
                 }
             )
         previous_employer_id = current_employer_id
-
-        for bonus in bonus_entries:
-            bonus_start = _month_start(bonus.effective_date)
-            bonus_end = _month_start(bonus.end_date)
-            if bonus_start <= current <= bonus_end:
-                months = max(1, _month_span_count(bonus_start, bonus_end))
-                bonus_total += bonus.amount / months
-
         label = current.strftime("%b %Y")
         timeline.append(TimelinePoint(current, label, base_amount, base_amount + bonus_total, current_employer_id))
         current = _next_month(current)
+    return timeline, employer_switches
 
-    bonus_windows = [
+
+def _build_bonus_windows(bonus_entries: List[SalaryEntry]) -> List[Dict[str, Optional[str]]]:
+    return [
         {
             "employer": bonus.employer.name,
             "start": bonus.effective_date.isoformat(),
@@ -296,7 +420,68 @@ def build_salary_timeline(
         for bonus in bonus_entries
     ]
 
-    inflation_series, inflation_meta = _inflation_projection(user, timeline, (start_date, end_date), baseline_mode, inflation_source)
+
+def _advance_regular_pointer(
+    current: date,
+    regular_entries: List[SalaryEntry],
+    regular_index: int,
+    active_regular: Optional[SalaryEntry],
+    derived_end_dates: Optional[Dict[int, Optional[date]]] = None,
+) -> Tuple[Optional[SalaryEntry], int]:
+    while regular_index < len(regular_entries) and regular_entries[regular_index].effective_date <= current:
+        active_regular = regular_entries[regular_index]
+        regular_index += 1
+    if active_regular:
+        resolved_end = _resolved_end_date(active_regular, derived_end_dates or {})
+        if resolved_end and _month_start(resolved_end) < current:
+            active_regular = None
+    return active_regular, regular_index
+
+
+def _monthly_bonus_allocation(
+    current: date,
+    bonus_entries: List[SalaryEntry],
+    cap_end: Optional[date] = None,
+) -> Decimal:
+    total = Decimal("0")
+    for bonus in bonus_entries:
+        bonus_start = _month_start(bonus.effective_date)
+        raw_end = bonus.end_date or cap_end or bonus.effective_date
+        if cap_end:
+            raw_end = min(raw_end, cap_end)
+        bonus_end = _month_start(raw_end)
+        if bonus_start <= current <= bonus_end:
+            months = max(1, _month_span_count(bonus_start, bonus_end))
+            total += bonus.amount / months
+    return total
+
+
+def build_salary_timeline(
+    user,
+    baseline_mode: Optional[str] = None,
+    inflation_source: Optional[InflationSource] = None,
+    manual_entry: Optional[SalaryEntry] = None,
+) -> Dict[str, List]:
+    baseline_mode, inflation_source, manual_entry = _resolve_timeline_inputs(user, baseline_mode, inflation_source, manual_entry)
+
+    entries = list(
+        SalaryEntry.objects.filter(user=user)
+        .select_related("employer")
+        .order_by("effective_date", "created_at")
+    )
+    if not entries:
+        return _empty_timeline_payload(baseline_mode, inflation_source, manual_entry)
+
+    timeline, start_date, end_date, bonus_windows, employer_switches = _build_timeline_components(entries)
+
+    inflation_series, inflation_meta = _inflation_projection(
+        user,
+        timeline,
+        (start_date, end_date),
+        baseline_mode,
+        inflation_source,
+        manual_entry=manual_entry,
+    )
 
     return {
         "labels": [point.label for point in timeline],
@@ -350,23 +535,9 @@ def _compute_actual_total(
     last_active_period: Optional[date] = None
 
     while current <= cutoff_period:
-        while regular_index < len(regular_entries) and regular_entries[regular_index].effective_date <= current:
-            active_regular = regular_entries[regular_index]
-            regular_index += 1
-        if active_regular:
-            resolved_end = _resolved_end_date(active_regular, derived_end_dates)
-            if resolved_end and _month_start(resolved_end) < current:
-                active_regular = None
-
+        active_regular, regular_index = _advance_regular_pointer(current, regular_entries, regular_index, active_regular, derived_end_dates)
         base_amount = active_regular.amount if active_regular else Decimal("0")
-        bonus_total = Decimal("0")
-        for bonus in bonus_entries:
-            bonus_start = _month_start(bonus.effective_date)
-            bonus_end_raw = bonus.end_date or cutoff_period
-            bonus_end = _month_start(min(bonus_end_raw, cutoff_period))
-            if bonus_start <= current <= bonus_end:
-                months = max(1, _month_span_count(bonus_start, bonus_end))
-                bonus_total += bonus.amount / months
+        bonus_total = _monthly_bonus_allocation(current, bonus_entries, cap_end=cutoff_period)
 
         if base_amount > 0 or bonus_total > 0:
             last_active_period = current

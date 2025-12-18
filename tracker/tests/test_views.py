@@ -116,3 +116,35 @@ class EmployerViewTests(TestCase):
         response = self.client.post(reverse("employer-delete", args=[employer.id]), follow=True)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Employer.objects.filter(pk=employer.id).exists())
+
+
+@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)
+class ManualBaselineSelectionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="manual@example.com", password="pass12345")
+        self.client.force_login(self.user)
+        self.employer = Employer.objects.create(user=self.user, name="Manual Inc")
+        self.entry = SalaryEntry.objects.create(
+            user=self.user,
+            employer=self.employer,
+            entry_type=SalaryEntry.EntryType.REGULAR,
+            effective_date=date(2024, 1, 1),
+            amount=Decimal("1000.00"),
+        )
+        self.preferences, _ = UserPreference.objects.get_or_create(user=self.user)
+        self.preferences.is_onboarded = True
+        self.preferences.save(update_fields=["is_onboarded"])
+
+    def test_select_inflation_baseline_updates_preference(self):
+        response = self.client.post(reverse("salary-entry-set-inflation-base", args=[self.entry.id]), follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.preferences.refresh_from_db()
+        self.assertEqual(self.preferences.inflation_manual_entry, self.entry)
+
+    def test_deleting_baseline_clears_preference(self):
+        self.preferences.inflation_manual_entry = self.entry
+        self.preferences.save(update_fields=["inflation_manual_entry"])
+        response = self.client.post(reverse("salary-entry-delete", args=[self.entry.id]), follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.preferences.refresh_from_db()
+        self.assertIsNone(self.preferences.inflation_manual_entry)

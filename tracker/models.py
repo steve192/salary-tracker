@@ -69,11 +69,20 @@ class UserPreference(models.Model):
     class InflationBaselineMode(models.TextChoices):
         GLOBAL = "GLOBAL", "Whole history"
         PER_EMPLOYER = "PER_EMPLOYER", "Current employer only"
+        LAST_INCREASE = "LAST_INCREASE", "Last salary increase"
+        MANUAL = "MANUAL", "Manual selection"
 
     inflation_baseline_mode = models.CharField(
         max_length=20,
         choices=InflationBaselineMode.choices,
         default=InflationBaselineMode.GLOBAL,
+    )
+    inflation_manual_entry = models.ForeignKey(
+        "SalaryEntry",
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
     )
 
     inflation_source = models.ForeignKey(

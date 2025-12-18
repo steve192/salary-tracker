@@ -24,6 +24,16 @@
 <section>
     <header>
         <h3>Salary entries</h3>
+        {% if baseline_mode == "MANUAL" %}
+        <p class="hint">
+            Manual inflation mode is active.
+            {% if manual_baseline_entry %}
+                Currently using {{ manual_baseline_entry.employer.name }} ({{ manual_baseline_entry.effective_date|date:"M Y" }}) as the baseline.
+            {% else %}
+                Select a regular salary entry to serve as the inflation baseline.
+            {% endif %}
+        </p>
+        {% endif %}
     </header>
     <form method="post" action="{% url 'salary-entry-create' %}" class="stacked">
         {% csrf_token %}
@@ -59,7 +69,7 @@
                 <th>Amount</th>
                 <th>Effective</th>
                 <th>End</th>
-                <th></th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -75,6 +85,16 @@
                         {% csrf_token %}
                         <button type="submit" class="secondary">Delete</button>
                     </form>
+                    {% if baseline_mode == "MANUAL" and entry.entry_type == "REGULAR" %}
+                        {% if manual_baseline_entry and manual_baseline_entry.pk == entry.pk %}
+                            <span class="hint">Inflation base</span>
+                        {% else %}
+                            <form method="post" action="{% url 'salary-entry-set-inflation-base' entry.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="secondary">Select as inflation base</button>
+                            </form>
+                        {% endif %}
+                    {% endif %}
                 </td>
             </tr>
             {% empty %}

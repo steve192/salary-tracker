@@ -56,11 +56,22 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        preferences, _ = UserPreference.objects.get_or_create(user=user)
+        preferences = (
+            UserPreference.objects.select_related("inflation_manual_entry", "inflation_manual_entry__employer")
+            .filter(user=user)
+            .first()
+        )
+        if not preferences:
+            preferences = UserPreference.objects.create(user=user)
         employers_qs = Employer.objects.filter(user=user).order_by("name")
         employer_names = list(employers_qs.values_list("name", flat=True))
         employers = list(employers_qs)
-        timeline_payload = build_salary_timeline(user, preferences.inflation_baseline_mode, preferences.inflation_source)
+        timeline_payload = build_salary_timeline(
+            user,
+            preferences.inflation_baseline_mode,
+            preferences.inflation_source,
+            preferences.inflation_manual_entry,
+        )
         context.update(
             {
                 "salary_form": SalaryEntryForm(user=user),
@@ -70,6 +81,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 "entries": SalaryEntry.objects.filter(user=user).select_related("employer"),
                 "timeline": timeline_payload,
                 "employer_summaries": build_employer_compensation_summary(user, employers, preferences, preferences.inflation_source),
+                "baseline_mode": preferences.inflation_baseline_mode,
+                "manual_baseline_entry": preferences.inflation_manual_entry,
                 "today": timezone.now().date(),
             }
         )
@@ -395,8 +408,41 @@ def create_salary_entry(request: HttpRequest) -> HttpResponse:
 @login_required
 def delete_salary_entry(request: HttpRequest, pk: int) -> HttpResponse:
     entry = get_object_or_404(SalaryEntry, pk=pk, user=request.user)
+    clearing_manual = False
+    preferences = (
+        UserPreference.objects.filter(user=request.user, inflation_manual_entry=entry).first()
+        if entry.entry_type == SalaryEntry.EntryType.REGULAR
+        else None
+    )
+    if preferences:
+        preferences.inflation_manual_entry = None
+        preferences.save(update_fields=["inflation_manual_entry"])
+        clearing_manual = True
     entry.delete()
-    messages.info(request, "Salary entry removed.")
+    if clearing_manual:
+        messages.info(request, "Salary entry removed and manual inflation baseline cleared.")
+    else:
+        messages.info(request, "Salary entry removed.")
+    return redirect("dashboard")
+
+
+@login_required
+def select_inflation_baseline(request: HttpRequest, pk: int) -> HttpResponse:
+    if request.method != "POST":
+        return redirect("dashboard")
+    entry = get_object_or_404(
+        SalaryEntry,
+        pk=pk,
+        user=request.user,
+        entry_type=SalaryEntry.EntryType.REGULAR,
+    )
+    preferences, _ = UserPreference.objects.get_or_create(user=request.user)
+    preferences.inflation_manual_entry = entry
+    preferences.save(update_fields=["inflation_manual_entry"])
+    if preferences.inflation_baseline_mode == UserPreference.InflationBaselineMode.MANUAL:
+        messages.success(request, "Inflation baseline updated.")
+    else:
+        messages.info(request, "Manual inflation baseline selected. Switch to Manual selection mode to see it in the chart.")
     return redirect("dashboard")
 
 
@@ -406,9 +452,9 @@ def update_preferences(request: HttpRequest) -> HttpResponse:
     form = UserPreferenceForm(request.POST, instance=preferences)
     if form.is_valid():
         form.save()
-        messages.success(request, "Currency updated.")
+        messages.success(request, "Preferences updated.")
     else:
-        messages.error(request, "Unable to update currency choice.")
+        messages.error(request, "Unable to update preferences.")
     return _redirect_with_next(request, "dashboard")
 
 
