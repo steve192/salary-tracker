@@ -1,9 +1,13 @@
+from django.contrib.auth import get_user_model
 from django.contrib.messages import get_messages
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
 
 class RegistrationToggleTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="existing@example.com", password="pass12345")
+
     def test_register_disabled_redirects_to_login(self):
         response = self.client.get(reverse("register"), follow=True)
         self.assertRedirects(response, reverse("login"))
