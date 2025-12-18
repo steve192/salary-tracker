@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ARG BUILD_VERSION="dev"
 ARG VCS_REF="local"
