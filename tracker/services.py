@@ -28,6 +28,15 @@ class BaselineSetup:
 
 
 @dataclass
+class MonthlyContribution:
+    label: str
+    actual: float
+    inflation: Optional[float]
+    delta: Optional[float]
+    cumulative_delta: Optional[float]
+
+
+@dataclass
 class EmployerCompSummary:
     employer_id: int
     employer_name: str
@@ -37,6 +46,7 @@ class EmployerCompSummary:
     inflation_message: Optional[str]
     delta_amount: Optional[Decimal]
     delta_state: Optional[str]
+    monthly_breakdown: List[MonthlyContribution]
 
 
 @dataclass
@@ -510,17 +520,17 @@ def _compute_actual_total(
     entries: List[SalaryEntry],
     cutoff_period: Optional[date],
     derived_end_dates: Optional[Dict[int, Optional[date]]] = None,
-) -> Tuple[Decimal, Optional[date]]:
+) -> Tuple[Decimal, Optional[date], List[Tuple[date, Decimal]]]:
     quantizer = Decimal("0.01")
     if cutoff_period is None:
-        return Decimal("0.00"), None
+        return Decimal("0.00"), None, []
     scoped_entries = [entry for entry in entries if entry.effective_date <= cutoff_period]
     if not scoped_entries:
-        return Decimal("0.00"), None
+        return Decimal("0.00"), None, []
 
     start_date = _month_start(min(entry.effective_date for entry in scoped_entries))
     if start_date > cutoff_period:
-        return Decimal("0.00"), None
+        return Decimal("0.00"), None, []
     derived_end_dates = derived_end_dates or {}
 
     regular_entries = [entry for entry in scoped_entries if entry.entry_type == SalaryEntry.EntryType.REGULAR]
@@ -533,50 +543,56 @@ def _compute_actual_total(
     regular_index = 0
     current = start_date
     last_active_period: Optional[date] = None
+    month_contributions: List[Tuple[date, Decimal]] = []
 
     while current <= cutoff_period:
         active_regular, regular_index = _advance_regular_pointer(current, regular_entries, regular_index, active_regular, derived_end_dates)
         base_amount = active_regular.amount if active_regular else Decimal("0")
         bonus_total = _monthly_bonus_allocation(current, bonus_entries, cap_end=cutoff_period)
 
-        if base_amount > 0 or bonus_total > 0:
+        month_total = (base_amount + bonus_total).quantize(quantizer)
+        if month_total > 0:
             last_active_period = current
-        total_amount += base_amount + bonus_total
+            month_contributions.append((current, month_total))
+        total_amount += month_total
         current = _next_month(current)
 
-    return total_amount.quantize(quantizer), last_active_period
+    return total_amount.quantize(quantizer), last_active_period, month_contributions
 
 
 def _compute_inflation_total(
     first_regular: Optional[SalaryEntry],
     comparison_end: Optional[date],
     rate_map: Dict[date, Decimal],
-) -> Tuple[Optional[Decimal], Optional[str]]:
+) -> Tuple[Optional[Decimal], Optional[str], List[Tuple[date, Decimal]]]:
     quantizer = Decimal("0.01")
     if not first_regular:
-        return None, "no-regular-salary"
+        return None, "no-regular-salary", []
     if comparison_end is None:
-        return Decimal("0.00"), None
+        return Decimal("0.00"), None, []
 
     base_period = _month_start(first_regular.effective_date)
     if comparison_end < base_period:
-        return Decimal("0.00"), None
+        return Decimal("0.00"), None, []
     if not rate_map:
-        return None, "no-inflation-data"
+        return None, "no-inflation-data", []
 
     base_index = rate_map.get(base_period)
     if not base_index:
-        return None, "missing-baseline-index"
+        return None, "missing-baseline-index", []
 
     total = Decimal("0")
+    contributions: List[Tuple[date, Decimal]] = []
     for period in _iter_months(base_period, comparison_end):
         period_index = rate_map.get(period)
         if not period_index:
-            return None, "missing-series-data"
+            return None, "missing-series-data", []
         multiplier = period_index / base_index
-        total += first_regular.amount * multiplier
+        month_value = (first_regular.amount * multiplier).quantize(quantizer)
+        contributions.append((period, month_value))
+        total += month_value
 
-    return total.quantize(quantizer), None
+    return total.quantize(quantizer), None, contributions
 
 
 def build_employer_compensation_summary(
@@ -631,25 +647,52 @@ def build_employer_compensation_summary(
 
     for employer in employer_list:
         employer_entries = entries_by_employer.get(employer.id, [])
-        actual_total, comparison_end = _compute_actual_total(employer_entries, cutoff_period, derived_end_dates)
+        actual_total, comparison_end, actual_months = _compute_actual_total(employer_entries, cutoff_period, derived_end_dates)
         first_regular = _first_regular_entry(employer_entries)
         if not inflation_source:
             inflation_total = None
             inflation_reason = "no-source-selected"
+            inflation_months: List[Tuple[date, Decimal]] = []
         else:
-            inflation_total, inflation_reason = _compute_inflation_total(first_regular, comparison_end, rate_map)
+            inflation_total, inflation_reason, inflation_months = _compute_inflation_total(first_regular, comparison_end, rate_map)
         inflation_ready = inflation_reason is None
         message = None if inflation_ready else INFLATION_REASON_MESSAGES.get(inflation_reason, "Inflation projection unavailable.")
-        delta_amount = None
+        aggregate_delta = None
         delta_state = None
         if inflation_ready and inflation_total is not None:
-            delta_amount = (actual_total - inflation_total).quantize(Decimal("0.01"))
-            if delta_amount > 0:
+            aggregate_delta = (actual_total - inflation_total).quantize(Decimal("0.01"))
+            if aggregate_delta > 0:
                 delta_state = "gain"
-            elif delta_amount < 0:
+            elif aggregate_delta < 0:
                 delta_state = "loss"
             else:
                 delta_state = "even"
+        inflation_map = {period: amount for period, amount in inflation_months} if inflation_ready else {}
+        cumulative_delta = Decimal("0.00")
+        has_cumulative = False
+        breakdown: List[MonthlyContribution] = []
+        for period, actual_amount in actual_months:
+            label = period.strftime("%b %Y")
+            inflation_value = inflation_map.get(period)
+            delta_value: Optional[float] = None
+            cumulative_value: Optional[float] = None
+            if inflation_value is not None:
+                month_delta_amount = (actual_amount - inflation_value).quantize(Decimal("0.01"))
+                delta_value = float(month_delta_amount)
+                cumulative_delta += month_delta_amount
+                cumulative_value = float(cumulative_delta)
+                has_cumulative = True
+            elif has_cumulative:
+                cumulative_value = float(cumulative_delta)
+            breakdown.append(
+                MonthlyContribution(
+                    label=label,
+                    actual=float(actual_amount),
+                    inflation=float(inflation_value) if inflation_value is not None else None,
+                    delta=delta_value,
+                    cumulative_delta=cumulative_value,
+                )
+            )
         summaries.append(
             EmployerCompSummary(
                 employer_id=employer.id,
@@ -658,8 +701,9 @@ def build_employer_compensation_summary(
                 inflation_total=inflation_total,
                 inflation_ready=inflation_ready,
                 inflation_message=message,
-                delta_amount=delta_amount,
+                delta_amount=aggregate_delta,
                 delta_state=delta_state,
+                monthly_breakdown=breakdown,
             )
         )
 

@@ -33,7 +33,7 @@ main.container {
 .chart-wrapper {
     position: relative;
     max-height: 420px;
-    min-height: 240px;
+    min-height: 512px;
 }
 
 section > header {
@@ -149,4 +149,21 @@ nav a.active {
     color: #8b949e;
     border-color: rgba(139, 148, 158, 0.3);
     background: rgba(139, 148, 158, 0.08);
+}
+
+.employer-breakdown td {
+    background: #0f1724;
+}
+
+.breakdown-table {
+    width: 100%;
+    margin-top: 0.75rem;
+    border-collapse: collapse;
+}
+
+.breakdown-table th,
+.breakdown-table td {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #30363d;
+    font-size: 0.9rem;
 }

@@ -218,6 +218,9 @@ class EmployerCompensationSummaryTests(TestCase):
         self.assertIsNotNone(summary.inflation_total)
         self.assertIsNotNone(summary.delta_amount)
         self.assertIn(summary.delta_state, {"gain", "loss", "even"})
+        self.assertGreater(len(summary.monthly_breakdown), 0)
+        self.assertTrue(any(month.delta is not None for month in summary.monthly_breakdown))
+        self.assertIsNotNone(summary.monthly_breakdown[-1].cumulative_delta)
 
     def test_summary_without_source_flags_reason(self):
         SalaryEntry.objects.create(

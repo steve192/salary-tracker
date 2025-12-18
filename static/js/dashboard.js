@@ -297,4 +297,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
         updateFullscreenLabel();
     }
+
+    document.querySelectorAll(".toggle-breakdown").forEach((button) => {
+        const targetId = button.getAttribute("data-target");
+        if (!targetId) return;
+        const targetRow = document.getElementById(targetId);
+        if (!targetRow) return;
+        const updateLabel = () => {
+            const hidden = targetRow.hasAttribute("hidden");
+            button.textContent = hidden ? "Show months" : "Hide months";
+        };
+        button.addEventListener("click", () => {
+            if (targetRow.hasAttribute("hidden")) {
+                targetRow.removeAttribute("hidden");
+            } else {
+                targetRow.setAttribute("hidden", "");
+            }
+            updateLabel();
+        });
+        updateLabel();
+    });
 });

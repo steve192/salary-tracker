@@ -127,8 +127,9 @@
             <tr>
                 <th>Employer</th>
                 <th>Actual compensation</th>
-                <th>Inflation baseline</th>
+                <th>Inflation Adjusted Initial Salary</th>
                 <th>Δ vs inflation</th>
+                <th>Details</th>
             </tr>
         </thead>
         <tbody>
@@ -152,6 +153,61 @@
                         </span>
                     {% else %}
                         <span class="hint">–</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button type="button" class="secondary toggle-breakdown" data-target="employer-breakdown-{{ summary.employer_id }}">Show months</button>
+                </td>
+            </tr>
+            <tr id="employer-breakdown-{{ summary.employer_id }}" class="employer-breakdown" hidden>
+                <td colspan="5">
+                    {% if summary.monthly_breakdown %}
+                    <table class="breakdown-table">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th>Actual compensation</th>
+                                <th>Inflation Adjusted Initial Salary</th>
+                                <th>Δ vs inflation</th>
+                                <th>Accumulated Δ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for month in summary.monthly_breakdown %}
+                            <tr>
+                                <td>{{ month.label }}</td>
+                                <td>{{ month.actual|floatformat:2 }} {{ current_currency }}</td>
+                                <td>
+                                    {% if month.inflation is not None %}
+                                        {{ month.inflation|floatformat:2 }} {{ current_currency }}
+                                    {% else %}
+                                        <span class="hint">–</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if month.delta is not None %}
+                                        <span class="delta-badge {% if month.delta > 0 %}delta-badge--gain{% elif month.delta < 0 %}delta-badge--loss{% else %}delta-badge--even{% endif %}">
+                                            {% if month.delta > 0 %}+{% elif month.delta < 0 %}−{% endif %}{{ month.delta|floatformat:2 }} {{ current_currency }}
+                                        </span>
+                                    {% else %}
+                                        <span class="hint">–</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if month.cumulative_delta is not None %}
+                                        <span class="delta-badge {% if month.cumulative_delta > 0 %}delta-badge--gain{% elif month.cumulative_delta < 0 %}delta-badge--loss{% else %}delta-badge--even{% endif %}">
+                                            {% if month.cumulative_delta > 0 %}+{% elif month.cumulative_delta < 0 %}−{% endif %}{{ month.cumulative_delta|floatformat:2 }} {{ current_currency }}
+                                        </span>
+                                    {% else %}
+                                        <span class="hint">–</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                        <p class="hint">No monthly contributions available.</p>
                     {% endif %}
                 </td>
             </tr>
