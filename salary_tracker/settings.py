@@ -64,6 +64,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "tracker.context_processors.feature_flags",
             ],
         },
     }
@@ -82,6 +83,7 @@ DATABASES = {
 }
 
 AUTH_USER_MODEL = "accounts.User"
+ALLOW_SELF_REGISTRATION = os.environ.get("DJANGO_ALLOW_SELF_REGISTRATION", "false").lower() == "true"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

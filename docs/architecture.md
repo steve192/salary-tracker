@@ -34,6 +34,7 @@
 - **Settings**: manage employers, update currency/baseline/source preferences, and review CPI coverage reports that highlight missing months per source.
 - **Admin Portal**: single page for admins to refresh CPI data, toggle source availability, add new sources, and promote/demote/delete users with guardrails (cannot remove yourself or the last admin).
 - **Auth pages**: Django auth templates for login/logout plus a custom registration view that immediately signs users in and sets defaults.
+- Self-service registration is disabled by default via `DJANGO_ALLOW_SELF_REGISTRATION`; operators can enable it when they want users to sign up directly, while the `/setup/` flow remains available for bootstrapping the first admin.
 
 ## Operations
 - `.env.example` documents the required settings (secret key, debug flag, DB path, default admin credentials, timezone).

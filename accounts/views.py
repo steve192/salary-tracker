@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.conf import settings
 from django.contrib.auth import get_user_model, login
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
@@ -16,6 +17,12 @@ class RegisterView(FormView):
     template_name = "registration/register.html"
     form_class = RegistrationForm
     success_url = reverse_lazy("onboarding")
+
+    def dispatch(self, request, *args, **kwargs):
+        if not settings.ALLOW_SELF_REGISTRATION:
+            messages.error(request, "Self-service registration is disabled by the administrator.")
+            return redirect("login")
+        return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
         user = form.save()
