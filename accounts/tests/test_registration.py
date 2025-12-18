@@ -10,7 +10,8 @@ class RegistrationToggleTests(TestCase):
 
     def test_register_disabled_redirects_to_login(self):
         response = self.client.get(reverse("register"))
-        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        expected_url = response.wsgi_request.build_absolute_uri(reverse("login"))
+        self.assertRedirects(response, expected_url, fetch_redirect_response=False)
         messages = [message.message for message in get_messages(response.wsgi_request)]
         self.assertTrue(any("disabled" in msg.lower() for msg in messages))
 
