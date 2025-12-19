@@ -5,7 +5,6 @@ from django.contrib.auth import get_user_model, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
 from django.db.models import Count, Max, Min
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -18,7 +17,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .forms import EmployerForm, SalaryEntryForm, UserPreferenceForm
-from .inflation import InflationFetchError, fetch_inflation_series
+from .inflation import InflationFetchError
+from .inflation_sync import refresh_inflation_source
 from .models import (
     Employer,
     InflationSource,
@@ -181,40 +181,17 @@ class AdminPortalView(AdminRequiredMixin, TemplateView):
             return redirect("admin-portal")
 
         try:
-            records = fetch_inflation_series(source.code)
+            result = refresh_inflation_source(source)
         except InflationFetchError as exc:
             logger.exception("Inflation fetch failed for source %s", source.code)
             messages.error(request, f"Download failed: {exc}")
             return redirect("admin-portal")
 
-        if not records:
+        if not result.record_count:
             messages.warning(request, f"No data returned for {source.label}.")
             return redirect("admin-portal")
 
-        created_count = 0
-        updated_count = 0
-        fetch_time = timezone.now()
-        with transaction.atomic():
-            for record in records:
-                _, created_flag = InflationRate.objects.update_or_create(
-                    source=source,
-                    period=record.period,
-                    defaults={
-                        "index_value": record.index_value,
-                        "metadata": record.metadata,
-                        "fetched_at": fetch_time,
-                    },
-                )
-                if created_flag:
-                    created_count += 1
-                else:
-                    updated_count += 1
-
-        if not source.available_to_users:
-            source.available_to_users = True
-            source.save(update_fields=["available_to_users"])
-
-        messages.success(request, f"{source.label}: {created_count} new rows, {updated_count} updated.")
+        messages.success(request, f"{source.label}: {result.created_count} new rows, {result.updated_count} updated.")
         return redirect("admin-portal")
 
     def _handle_create_source(self, request):
@@ -234,14 +211,27 @@ class AdminPortalView(AdminRequiredMixin, TemplateView):
             messages.info(request, "That source code already exists.")
             return redirect("admin-portal")
 
-        InflationSource.objects.create(
+        source = InflationSource.objects.create(
             code=code,
             label=label,
             description=description,
             is_active=True,
             available_to_users=available,
         )
-        messages.success(request, f"Source '{label}' added.")
+        try:
+            result = refresh_inflation_source(source)
+        except InflationFetchError as exc:
+            logger.exception("Inflation fetch failed for new source %s", source.code)
+            messages.warning(request, f"Source '{label}' added, but fetching data failed: {exc}")
+            return redirect("admin-portal")
+
+        if result.record_count:
+            messages.success(
+                request,
+                f"Source '{label}' added and downloaded {result.created_count} new row{'s' if result.created_count != 1 else ''}.",
+            )
+        else:
+            messages.warning(request, f"Source '{label}' added, but no data was returned by the provider.")
         return redirect("admin-portal")
 
     def _handle_source_flag(self, request, field_name: str):

@@ -21,8 +21,8 @@ A lightweight Django web application for tracking salary history across multiple
 
 3. Open http://localhost:8000 and log create your initial user. 
 
-5. Go to admin settings and add an inflation index. Then press refresh to download current inflation data
-6. Go to your personal settings and apply the inflation index you just downloaded
+5. Go to admin settings and add an inflation index. Data will download automatically.
+6. Go to your personal settings and apply the inflation index you just added
 6. Add employers and salary entries from the dashboard. The chart updates immediately based on the stored data.
 
 ## Ready to use docker-compose 

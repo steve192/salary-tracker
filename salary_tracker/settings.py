@@ -43,6 +43,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "salary_tracker.middleware.OnboardingRequiredMiddleware",
+    "salary_tracker.middleware.AutomatedInflationSyncMiddleware",
     "salary_tracker.middleware.AbsoluteRedirectMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

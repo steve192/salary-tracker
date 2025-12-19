@@ -3,10 +3,12 @@ import logging
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from urllib.parse import urljoin
 
 from django.http import HttpResponseRedirect
 from django.urls import NoReverseMatch, reverse, get_script_prefix, set_script_prefix
+from tracker.inflation_sync import ensure_recent_inflation_data
 
 
 logger = logging.getLogger(__name__)
@@ -223,3 +225,26 @@ class AbsoluteRedirectMiddleware:
             absolute = urljoin(base, location)
         response["Location"] = absolute
         return response
+
+
+class AutomatedInflationSyncMiddleware:
+    """Runs the inflation freshness check once per process each day."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self._last_check_date = None
+
+    def __call__(self, request):
+        self._maybe_run_automatic_sync()
+        return self.get_response(request)
+
+    def _maybe_run_automatic_sync(self):
+        today = timezone.now().date()
+        if self._last_check_date == today:
+            return
+        try:
+            ensure_recent_inflation_data(logger)
+        except Exception:
+            logger.exception("Automated inflation refresh failed")
+        finally:
+            self._last_check_date = today

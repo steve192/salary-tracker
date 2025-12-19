@@ -60,7 +60,7 @@ class AdminPortalViewTests(TestCase):
         prefs.is_onboarded = True
         prefs.save(update_fields=["is_onboarded"])
 
-    @patch("tracker.views.fetch_inflation_series")
+    @patch("tracker.inflation_sync.fetch_inflation_series")
     def test_fetch_source_creates_rates_and_marks_available(self, mock_fetch):
         mock_fetch.return_value = [
             InflationRecord(period=date(2024, 1, 1), index_value=Decimal("100.0"), metadata={}),
@@ -91,6 +91,29 @@ class AdminPortalViewTests(TestCase):
         self.assertTrue(self.source.available_to_users)
         msgs = [m.level for m in get_messages(response.wsgi_request)]
         self.assertIn(messages.SUCCESS, msgs)
+
+    @patch("tracker.inflation_sync.fetch_inflation_series")
+    def test_create_source_triggers_initial_refresh(self, mock_fetch):
+        self.source.delete()
+        mock_fetch.return_value = [
+            InflationRecord(period=date(2024, 3, 1), index_value=Decimal("102.0"), metadata={}),
+        ]
+        response = self.client.post(
+            reverse("admin-portal"),
+            {
+                "action": "create-source",
+                "code": InflationSourceChoices.ECB_GERMANY,
+                "label": "ECB Germany",
+                "description": "",
+                "available_to_users": "on",
+            },
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        source = InflationSource.objects.get(code=InflationSourceChoices.ECB_GERMANY)
+        self.assertEqual(source.rates.count(), 1)
+        msgs = [m.message for m in get_messages(response.wsgi_request)]
+        self.assertTrue(any("downloaded" in msg for msg in msgs))
 
 
 @override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)
