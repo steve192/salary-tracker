@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
             pointRadius: 2,
         },
         {
-            label: "Total compensation",
+            label: "Total compensation (incl. bonuses)",
             data: timeline.totalSeries,
             borderColor: "#f78166",
             tension: 0.3,

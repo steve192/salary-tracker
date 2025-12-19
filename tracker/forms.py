@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django import forms
 
 from .models import Employer, InflationSource, SalaryEntry, UserPreference
@@ -69,6 +71,35 @@ class SalaryEntryForm(forms.ModelForm):
             self.created_employer = True
         return name
 
+    def clean(self):
+        cleaned_data = super().clean()
+        entry_type = cleaned_data.get("entry_type")
+        effective_date = cleaned_data.get("effective_date")
+        end_date = cleaned_data.get("end_date")
+        amount = cleaned_data.get("amount")
+
+        if entry_type == SalaryEntry.EntryType.BONUS:
+            if not effective_date:
+                self.add_error("effective_date", "Start date is required for bonuses.")
+            if not end_date and effective_date:
+                try:
+                    anniversary = effective_date.replace(year=effective_date.year + 1)
+                except ValueError:
+                    anniversary = effective_date + timedelta(days=365)
+                cleaned_data["end_date"] = anniversary - timedelta(days=1)
+                end_date = cleaned_data["end_date"]
+            if not end_date:
+                self.add_error("end_date", "End date is required for bonuses.")
+            elif effective_date and end_date < effective_date:
+                self.add_error("end_date", "End date cannot be before the start date.")
+        else:
+            cleaned_data["end_date"] = None
+
+        if amount is None:
+            self.add_error("amount", "Amount is required.")
+
+        return cleaned_data
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         if not self._employer_obj:
@@ -101,5 +132,3 @@ class UserPreferenceForm(forms.ModelForm):
             "inflation_baseline_mode": forms.Select(),
             "inflation_source": forms.Select(),
         }
-
-

@@ -3,6 +3,27 @@
 {% block title %}Dashboard · Salary Tracker{% endblock %}
 {% block content %}
 <p class="hint">Detected timezone: <span id="tz-display">…</span></p>
+<style>
+    .amount-field__row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .amount-field__row button {
+        margin: 0;
+        margin-bottom: var(--pico-spacing);
+        white-space: nowrap;
+    }
+    #amount-helper-modal .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+    }
+    #amount-helper-modal .modal-header button {
+        margin: 0;
+    }
+</style>
 
 <section class="dashboard-actions">
     <article>
@@ -45,17 +66,32 @@
                     {{ salary_form.employer_name }}
                     <div class="quick-employer__dropdown" id="employer-suggestions" hidden></div>
                 </div>
+                {{ salary_form.employer_name.errors }}
             </label>
             <label>
                 Type
                 {{ salary_form.entry_type }}
+                {{ salary_form.entry_type.errors }}
             </label>
         </div>
         <div class="grid">
-            <label>Effective date {{ salary_form.effective_date }}</label>
-            <label>End date {{ salary_form.end_date }}</label>
+            <label>
+                Effective date {{ salary_form.effective_date }}
+                {{ salary_form.effective_date.errors }}
+            </label>
+            <label>
+                End date {{ salary_form.end_date }}
+                {{ salary_form.end_date.errors }}
+            </label>
         </div>
-        <label>Amount {{ salary_form.amount }}</label>
+        <label class="amount-field">
+            <span>Monthly Salary (before taxes)</span>
+            <div class="amount-field__row">
+                {{ salary_form.amount }}
+                <button type="button" class="secondary amount-helper-trigger" data-target="amount-helper-modal" title="Assist with yearly/part-time calculation">Assisted entry</button>
+            </div>
+            {{ salary_form.amount.errors }}
+        </label>
         <label>Notes {{ salary_form.notes }}</label>
         <p class="hint">Bonuses are prorated over their duration for the chart.</p>
         <button type="submit">Save entry</button>
@@ -261,10 +297,158 @@
 
 {{ timeline|json_script:"timeline-data" }}
 {{ employer_names|json_script:"employer-names-data" }}
+
+<dialog id="amount-helper-modal">
+    <article>
+        <header class="modal-header">
+            <h4>Assisted monthly salary entry</h4>
+            <button type="button" class="secondary outline modal-close" data-close-modal>&times;</button>
+        </header>
+        <p class="hint">Provide your gross yearly salary and working percentage to calculate the monthly amount.</p>
+        <form id="amount-helper-form">
+            <label>
+                Yearly salary (gross)
+                <input type="number" name="yearly" id="amount-helper-yearly" min="0" step="0.01" required>
+            </label>
+            <label>
+                Working percentage (100 = full-time)
+                <input type="number" name="percentage" id="amount-helper-percentage" min="1" max="200" step="1" value="100" required>
+            </label>
+            <label>
+                Resulting monthly salary
+                <input type="text" id="amount-helper-result" readonly>
+            </label>
+            <footer>
+                <button type="button" class="secondary" data-close-modal>Cancel</button>
+                <button type="submit">Apply to form</button>
+            </footer>
+        </form>
+    </article>
+</dialog>
 {% endblock %}
 
 {% block extra_scripts %}
 <script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
 <script src="{% static 'js/vendor/chartjs-plugin-zoom.min.js' %}"></script>
 <script src="{% static 'js/dashboard.js' %}"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const entryTypeField = document.getElementById("id_entry_type");
+        const endDateField = document.getElementById("id_end_date");
+        const startDateField = document.getElementById("id_effective_date");
+        if (!entryTypeField || !endDateField) {
+            return;
+        }
+
+        const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+        const computeDefaultEndDate = () => {
+            if (!startDateField || !isIsoDate(startDateField.value)) {
+                return null;
+            }
+            const startValue = new Date(startDateField.value);
+            if (Number.isNaN(startValue.getTime())) {
+                return null;
+            }
+            const defaultEnd = new Date(startValue);
+            defaultEnd.setFullYear(defaultEnd.getFullYear() + 1);
+            defaultEnd.setDate(defaultEnd.getDate() - 1);
+            return defaultEnd.toISOString().slice(0, 10);
+        };
+
+        const syncEndDateState = () => {
+            const isBonus = entryTypeField.value === "BONUS";
+            endDateField.disabled = !isBonus;
+            endDateField.required = isBonus;
+            if (!isBonus) {
+                endDateField.value = "";
+                endDateField.dataset.autofill = "true";
+            } else if (!endDateField.value) {
+                const iso = computeDefaultEndDate();
+                if (iso) {
+                    endDateField.value = iso;
+                    endDateField.dataset.autofill = "true";
+                }
+            }
+        };
+
+        const maybeAutofillEndDate = () => {
+            if (entryTypeField.value !== "BONUS") {
+                return;
+            }
+            if (endDateField.dataset.autofill !== "true" && endDateField.value) {
+                return;
+            }
+            const iso = computeDefaultEndDate();
+            if (iso) {
+                endDateField.value = iso;
+                endDateField.dataset.autofill = "true";
+            }
+        };
+
+        entryTypeField.addEventListener("change", () => {
+            syncEndDateState();
+        });
+
+        if (startDateField) {
+            startDateField.addEventListener("change", maybeAutofillEndDate);
+            startDateField.addEventListener("input", maybeAutofillEndDate);
+        }
+
+        endDateField.addEventListener("input", () => {
+            endDateField.dataset.autofill = "false";
+        });
+
+        if (!endDateField.dataset.autofill) {
+            endDateField.dataset.autofill = endDateField.value ? "false" : "true";
+        }
+
+        syncEndDateState();
+
+        const amountHelperButton = document.querySelector(".amount-helper-trigger");
+        const amountField = document.getElementById("id_amount");
+        const amountModal = document.getElementById("amount-helper-modal");
+        const amountForm = document.getElementById("amount-helper-form");
+        const yearlyField = document.getElementById("amount-helper-yearly");
+        const percentageField = document.getElementById("amount-helper-percentage");
+        const resultField = document.getElementById("amount-helper-result");
+        const closeButtons = document.querySelectorAll("[data-close-modal]");
+
+        const updateResult = () => {
+            const yearly = parseFloat(yearlyField.value);
+            const percent = parseFloat(percentageField.value);
+            if (Number.isNaN(yearly) || yearly <= 0 || Number.isNaN(percent) || percent <= 0) {
+                resultField.value = "";
+                return;
+            }
+            const monthly = (yearly * (percent / 100)) / 12;
+            resultField.value = monthly.toFixed(2);
+        };
+
+        if (amountHelperButton && amountModal && amountForm && amountField) {
+            amountHelperButton.addEventListener("click", () => {
+                amountModal.showModal();
+                requestAnimationFrame(() => yearlyField?.focus());
+            });
+
+            closeButtons.forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    amountModal.close();
+                });
+            });
+
+            amountForm.addEventListener("input", updateResult);
+
+            amountForm.addEventListener("submit", (event) => {
+                event.preventDefault();
+                updateResult();
+                if (!resultField.value) {
+                    return;
+                }
+                amountField.value = resultField.value;
+                amountModal.close();
+            });
+        }
+    });
+</script>
 {% endblock %}
