@@ -5,7 +5,7 @@ A lightweight Django web application for tracking salary history across multiple
 ![Manual approval screen](docs/salary-tracker.png)
 ## Features
 - Employer management and salary entries (regular raises + time-bound bonuses).
-- Compare salary development to inflation (currently only inflation rates of the european union available)
+- Compare salary development to inflation (ECB HICP data for every EU member state)
 
 ## Quick Start (Docker)
 1. Copy the sample environment file and adjust values:

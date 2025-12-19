@@ -9,7 +9,41 @@ import requests
 
 from .models import InflationSourceChoices
 
-ECB_GERMANY_ENDPOINT = "https://data.ecb.europa.eu/data-detail-api/ICP.M.DE.N.000000.4.INX"
+ECB_SERIES_TEMPLATE = "ICP.M.{country_code}.N.000000.4.INX"
+ECB_BASE_URL = "https://data.ecb.europa.eu/data-detail-api/{series_code}"
+ECB_COUNTRY_CODES = {
+    InflationSourceChoices.ECB_AUSTRIA.value: "AT",
+    InflationSourceChoices.ECB_BELGIUM.value: "BE",
+    InflationSourceChoices.ECB_BULGARIA.value: "BG",
+    InflationSourceChoices.ECB_CROATIA.value: "HR",
+    InflationSourceChoices.ECB_CYPRUS.value: "CY",
+    InflationSourceChoices.ECB_CZECHIA.value: "CZ",
+    InflationSourceChoices.ECB_DENMARK.value: "DK",
+    InflationSourceChoices.ECB_ESTONIA.value: "EE",
+    InflationSourceChoices.ECB_FINLAND.value: "FI",
+    InflationSourceChoices.ECB_FRANCE.value: "FR",
+    InflationSourceChoices.ECB_GERMANY.value: "DE",
+    InflationSourceChoices.ECB_GREECE.value: "GR",
+    InflationSourceChoices.ECB_HUNGARY.value: "HU",
+    InflationSourceChoices.ECB_IRELAND.value: "IE",
+    InflationSourceChoices.ECB_ITALY.value: "IT",
+    InflationSourceChoices.ECB_LATVIA.value: "LV",
+    InflationSourceChoices.ECB_LITHUANIA.value: "LT",
+    InflationSourceChoices.ECB_LUXEMBOURG.value: "LU",
+    InflationSourceChoices.ECB_MALTA.value: "MT",
+    InflationSourceChoices.ECB_NETHERLANDS.value: "NL",
+    InflationSourceChoices.ECB_POLAND.value: "PL",
+    InflationSourceChoices.ECB_PORTUGAL.value: "PT",
+    InflationSourceChoices.ECB_ROMANIA.value: "RO",
+    InflationSourceChoices.ECB_SLOVAKIA.value: "SK",
+    InflationSourceChoices.ECB_SLOVENIA.value: "SI",
+    InflationSourceChoices.ECB_SPAIN.value: "ES",
+    InflationSourceChoices.ECB_SWEDEN.value: "SE",
+}
+ECB_SERIES_BY_SOURCE = {
+    code: ECB_SERIES_TEMPLATE.format(country_code=country_code)
+    for code, country_code in ECB_COUNTRY_CODES.items()
+}
 
 
 class InflationFetchError(Exception):
@@ -24,14 +58,16 @@ class InflationRecord:
 
 
 def fetch_inflation_series(source: str) -> List[InflationRecord]:
-    if source == InflationSourceChoices.ECB_GERMANY:
-        return _fetch_ecb_germany()
+    series_code = ECB_SERIES_BY_SOURCE.get(source)
+    if series_code:
+        return _fetch_ecb_series(series_code)
     raise InflationFetchError("Unsupported inflation source.")
 
 
-def _fetch_ecb_germany() -> List[InflationRecord]:
+def _fetch_ecb_series(series_code: str) -> List[InflationRecord]:
+    endpoint = ECB_BASE_URL.format(series_code=series_code)
     try:
-        response = requests.get(ECB_GERMANY_ENDPOINT, timeout=20)
+        response = requests.get(endpoint, timeout=20)
         response.raise_for_status()
     except requests.RequestException as exc:
         raise InflationFetchError("Failed to reach ECB data service.") from exc
@@ -65,6 +101,7 @@ def _fetch_ecb_germany() -> List[InflationRecord]:
                 period=period,
                 index_value=index_value,
                 metadata={
+                    "series_code": series_code,
                     "legend": row.get("LEGEND"),
                     "status": row.get("OBS_STATUS"),
                     "trend": row.get("TREND_INDICATOR"),

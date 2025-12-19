@@ -100,7 +100,33 @@ class UserPreference(models.Model):
 
 
 class InflationSourceChoices(models.TextChoices):
+    ECB_AUSTRIA = "ECB_AT", "Austria (ECB)"
+    ECB_BELGIUM = "ECB_BE", "Belgium (ECB)"
+    ECB_BULGARIA = "ECB_BG", "Bulgaria (ECB)"
+    ECB_CROATIA = "ECB_HR", "Croatia (ECB)"
+    ECB_CYPRUS = "ECB_CY", "Cyprus (ECB)"
+    ECB_CZECHIA = "ECB_CZ", "Czechia (ECB)"
+    ECB_DENMARK = "ECB_DK", "Denmark (ECB)"
+    ECB_ESTONIA = "ECB_EE", "Estonia (ECB)"
+    ECB_FINLAND = "ECB_FI", "Finland (ECB)"
+    ECB_FRANCE = "ECB_FR", "France (ECB)"
     ECB_GERMANY = "ECB_DE", "Germany (ECB)"
+    ECB_GREECE = "ECB_GR", "Greece (ECB)"
+    ECB_HUNGARY = "ECB_HU", "Hungary (ECB)"
+    ECB_IRELAND = "ECB_IE", "Ireland (ECB)"
+    ECB_ITALY = "ECB_IT", "Italy (ECB)"
+    ECB_LATVIA = "ECB_LV", "Latvia (ECB)"
+    ECB_LITHUANIA = "ECB_LT", "Lithuania (ECB)"
+    ECB_LUXEMBOURG = "ECB_LU", "Luxembourg (ECB)"
+    ECB_MALTA = "ECB_MT", "Malta (ECB)"
+    ECB_NETHERLANDS = "ECB_NL", "Netherlands (ECB)"
+    ECB_POLAND = "ECB_PL", "Poland (ECB)"
+    ECB_PORTUGAL = "ECB_PT", "Portugal (ECB)"
+    ECB_ROMANIA = "ECB_RO", "Romania (ECB)"
+    ECB_SLOVAKIA = "ECB_SK", "Slovakia (ECB)"
+    ECB_SLOVENIA = "ECB_SI", "Slovenia (ECB)"
+    ECB_SPAIN = "ECB_ES", "Spain (ECB)"
+    ECB_SWEDEN = "ECB_SE", "Sweden (ECB)"
 
 
 class InflationSource(models.Model):
