@@ -59,6 +59,7 @@ class FutureSalaryTarget:
     base_label: Optional[str]
     base_amount: Optional[Decimal]
     reason: Optional[str]
+    inflation_percent: Optional[Decimal]
 
 
 @dataclass
@@ -795,6 +796,7 @@ def build_future_salary_targets(
                 base_label=None,
                 base_amount=None,
                 reason=missing_reason,
+                inflation_percent=None,
             )
         base_period = _month_start(base_entry.effective_date)
         if base_period > target_period:
@@ -807,6 +809,7 @@ def build_future_salary_targets(
                 base_label=_format_base_label(base_entry),
                 base_amount=base_entry.amount,
                 reason="Baseline is in the future. Wait for new inflation data.",
+                inflation_percent=None,
             )
         base_index = rate_map.get(base_period)
         if not base_index:
@@ -819,10 +822,12 @@ def build_future_salary_targets(
                 base_label=_format_base_label(base_entry),
                 base_amount=base_entry.amount,
                 reason="Missing CPI data for this baseline month. Refresh your inflation source.",
+                inflation_percent=None,
             )
         multiplier = target_index / base_index
         target_salary = (base_entry.amount * multiplier).quantize(Decimal("0.01"))
         delta = (target_salary - current_salary).quantize(Decimal("0.01"))
+        inflation_percent = ((multiplier - Decimal("1")) * Decimal("100")).quantize(Decimal("0.01"))
         return FutureSalaryTarget(
             key=key,
             title=title,
@@ -832,6 +837,7 @@ def build_future_salary_targets(
             base_label=_format_base_label(base_entry),
             base_amount=base_entry.amount,
             reason=None,
+            inflation_percent=inflation_percent,
         )
 
     targets = [

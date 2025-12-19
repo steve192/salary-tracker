@@ -345,6 +345,9 @@ class FutureSalaryTargetsTests(TestCase):
             last_raise.delta_amount,
             (last_raise.target_salary - self.current_entry.amount).quantize(Decimal("0.01")),
         )
+        self.assertIsNotNone(last_raise.inflation_percent)
+        employer_start = target_map["employer-start"]
+        self.assertIsNotNone(employer_start.inflation_percent)
 
     def test_manual_baseline_target_appears_when_preference_set(self):
         self._seed_rates()
@@ -356,3 +359,4 @@ class FutureSalaryTargetsTests(TestCase):
         target_map = {target.key: target for target in targets}
         self.assertIn("manual-baseline", target_map)
         self.assertIsNone(target_map["manual-baseline"].reason)
+        self.assertIsNotNone(target_map["manual-baseline"].inflation_percent)

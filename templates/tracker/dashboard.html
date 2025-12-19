@@ -132,17 +132,20 @@
             {% for target in future_salary_targets %}
             <article>
                 <h4>{{ target.title }}</h4>
-                <p class="hint">{{ target.description }}</p>
-                {% if target.reason %}
-                    <p class="hint">{{ target.reason }}</p>
-                {% else %}
-                    <p class="future-target-value">{{ target.target_salary|floatformat:2 }} {{ current_currency }}</p>
-                    <p class="hint">Baseline: {{ target.base_label }} · {{ target.base_amount|floatformat:2 }} {{ current_currency }}</p>
-                    <p>
-                        <span class="delta-badge {% if target.delta_amount > 0 %}delta-badge--gain{% elif target.delta_amount < 0 %}delta-badge--loss{% else %}delta-badge--even{% endif %}">
-                            {% if target.delta_amount > 0 %}+{% elif target.delta_amount < 0 %}−{% endif %}{{ target.delta_amount|floatformat:2 }} {{ current_currency }}
-                        </span>
-                        <span class="hint">Gap vs current salary</span>
+                    <p class="hint">{{ target.description }}</p>
+                    {% if target.reason %}
+                        <p class="hint">{{ target.reason }}</p>
+                    {% else %}
+                        <p class="future-target-value">{{ target.target_salary|floatformat:2 }} {{ current_currency }}</p>
+                        <p class="hint">Baseline: {{ target.base_label }} · {{ target.base_amount|floatformat:2 }} {{ current_currency }}</p>
+                        {% if target.inflation_percent is not None %}
+                        <p class="hint">Inflation since baseline: {{ target.inflation_percent|floatformat:2 }}%</p>
+                        {% endif %}
+                        <p>
+                            <span class="delta-badge {% if target.delta_amount > 0 %}delta-badge--gain{% elif target.delta_amount < 0 %}delta-badge--loss{% else %}delta-badge--even{% endif %}">
+                                {% if target.delta_amount > 0 %}+{% elif target.delta_amount < 0 %}−{% endif %}{{ target.delta_amount|floatformat:2 }} {{ current_currency }}
+                            </span>
+                            <span class="hint">Gap vs current salary</span>
                     </p>
                 {% endif %}
             </article>
