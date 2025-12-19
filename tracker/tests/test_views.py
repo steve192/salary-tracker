@@ -14,7 +14,15 @@ from tracker.models import Employer, InflationRate, InflationSource, InflationSo
 
 
 User = get_user_model()
-PROXYLESS_MIDDLEWARE = [mw for mw in settings.MIDDLEWARE if mw != "salary_tracker.middleware.ProxyPrefixMiddleware"]
+PROXYLESS_MIDDLEWARE = [
+    mw
+    for mw in settings.MIDDLEWARE
+    if mw
+    not in {
+        "salary_tracker.middleware.ProxyPrefixMiddleware",
+        "salary_tracker.middleware.AutomatedInflationSyncMiddleware",
+    }
+]
 
 
 @override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)

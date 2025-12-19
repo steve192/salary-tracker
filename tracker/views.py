@@ -244,10 +244,11 @@ class AdminPortalView(AdminRequiredMixin, TemplateView):
         if not source:
             return redirect("admin-portal")
         current = getattr(source, field_name)
-        setattr(source, field_name, not current)
-        source.save(update_fields=[field_name])
+        new_value = not current
+        setattr(source, field_name, new_value)
+        source.save(update_fields=[field_name, "updated_at"])
         label = "available to users" if field_name == "available_to_users" else "active"
-        state = "enabled" if not current else "disabled"
+        state = "enabled" if new_value else "disabled"
         messages.success(request, f"{source.label} {label} state {state}.")
         return redirect("admin-portal")
 
