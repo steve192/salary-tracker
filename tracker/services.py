@@ -50,6 +50,18 @@ class EmployerCompSummary:
 
 
 @dataclass
+class FutureSalaryTarget:
+    key: str
+    title: str
+    description: str
+    target_salary: Optional[Decimal]
+    delta_amount: Optional[Decimal]
+    base_label: Optional[str]
+    base_amount: Optional[Decimal]
+    reason: Optional[str]
+
+
+@dataclass
 class InflationGap:
     start: date
     end: date
@@ -708,6 +720,149 @@ def build_employer_compensation_summary(
         )
 
     return summaries
+
+
+def build_future_salary_targets(
+    user,
+    preferences: Optional[UserPreference] = None,
+) -> Tuple[List[FutureSalaryTarget], Optional[str], Optional[date]]:
+    if preferences is None:
+        preferences, _ = UserPreference.objects.get_or_create(user=user)
+
+    source = preferences.inflation_source
+    if not source:
+        return [], "Select an inflation source in Settings to calculate future salary targets.", None
+
+    regular_entries = list(
+        SalaryEntry.objects.filter(user=user, entry_type=SalaryEntry.EntryType.REGULAR)
+        .select_related("employer")
+        .order_by("effective_date", "created_at")
+    )
+    if not regular_entries:
+        return [], "Add at least one regular salary entry to compute these targets.", None
+
+    latest_rate = (
+        InflationRate.objects.filter(source=source)
+        .only("period", "index_value")
+        .order_by("-period")
+        .first()
+    )
+    if not latest_rate:
+        return [], "Download inflation data for your selected source to calculate targets.", None
+
+    today = timezone.now().date()
+    current_entry = next((entry for entry in reversed(regular_entries) if entry.effective_date <= today), None) or regular_entries[-1]
+    current_salary = current_entry.amount
+    target_period = latest_rate.period
+
+    current_employer_first = next((entry for entry in regular_entries if entry.employer_id == current_entry.employer_id), None)
+    manual_entry = preferences.inflation_manual_entry
+    manual_candidate: Optional[SalaryEntry] = None
+    if manual_entry and manual_entry.user_id == user.id and manual_entry.entry_type == SalaryEntry.EntryType.REGULAR:
+        manual_candidate = manual_entry
+
+    start_periods = [
+        _month_start(entry.effective_date)
+        for entry in [current_entry, current_employer_first, manual_candidate]
+        if entry is not None
+    ]
+    start_periods.append(target_period)
+    start_period = min(start_periods)
+
+    rate_map = _build_rate_map(source, start_period, target_period)
+    target_index = rate_map.get(target_period)
+    if not target_index:
+        return [], "Inflation data missing for the latest month. Refresh your CPI feed.", None
+
+    def _format_base_label(entry: SalaryEntry) -> str:
+        return f"{entry.employer.name} · {entry.effective_date:%b %Y}"
+
+    def _build_target(
+        *,
+        key: str,
+        title: str,
+        description: str,
+        base_entry: Optional[SalaryEntry],
+        missing_reason: str,
+    ) -> FutureSalaryTarget:
+        if not base_entry:
+            return FutureSalaryTarget(
+                key=key,
+                title=title,
+                description=description,
+                target_salary=None,
+                delta_amount=None,
+                base_label=None,
+                base_amount=None,
+                reason=missing_reason,
+            )
+        base_period = _month_start(base_entry.effective_date)
+        if base_period > target_period:
+            return FutureSalaryTarget(
+                key=key,
+                title=title,
+                description=description,
+                target_salary=None,
+                delta_amount=None,
+                base_label=_format_base_label(base_entry),
+                base_amount=base_entry.amount,
+                reason="Baseline is in the future. Wait for new inflation data.",
+            )
+        base_index = rate_map.get(base_period)
+        if not base_index:
+            return FutureSalaryTarget(
+                key=key,
+                title=title,
+                description=description,
+                target_salary=None,
+                delta_amount=None,
+                base_label=_format_base_label(base_entry),
+                base_amount=base_entry.amount,
+                reason="Missing CPI data for this baseline month. Refresh your inflation source.",
+            )
+        multiplier = target_index / base_index
+        target_salary = (base_entry.amount * multiplier).quantize(Decimal("0.01"))
+        delta = (target_salary - current_salary).quantize(Decimal("0.01"))
+        return FutureSalaryTarget(
+            key=key,
+            title=title,
+            description=description,
+            target_salary=target_salary,
+            delta_amount=delta,
+            base_label=_format_base_label(base_entry),
+            base_amount=base_entry.amount,
+            reason=None,
+        )
+
+    targets = [
+        _build_target(
+            key="last-raise",
+            title="Match inflation since your last increase",
+            description="Keeps your latest salary aligned with price changes since that raise.",
+            base_entry=current_entry,
+            missing_reason="Add a regular salary entry to calculate this target.",
+        ),
+        _build_target(
+            key="employer-start",
+            title="Catch up since joining your current employer",
+            description="What your pay would be if it had only tracked inflation since day one at this employer.",
+            base_entry=current_employer_first,
+            missing_reason="Add a salary entry for your current employer to calculate this target.",
+        ),
+    ]
+
+    if manual_candidate:
+        targets.append(
+            _build_target(
+                key="manual-baseline",
+                title="Match inflation since your manual baseline",
+                description="Anchors to the baseline you selected in the salary table.",
+                base_entry=manual_candidate,
+                missing_reason="Select a manual inflation baseline to calculate this target.",
+            )
+        )
+
+    return targets, None, target_period
 
 
 def build_inflation_gap_report(user) -> Dict[str, object]:

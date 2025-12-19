@@ -119,6 +119,43 @@
 
 <section>
     <header>
+        <h3>Future salary increases</h3>
+        {% if future_salary_targets_period %}
+        <p class="hint">Targets account for CPI data through {{ future_salary_targets_period|date:"F Y" }}.</p>
+        {% endif %}
+    </header>
+    {% if future_salary_targets_message %}
+        <p class="hint">{{ future_salary_targets_message }}</p>
+    {% else %}
+        {% if future_salary_targets %}
+        <div class="grid">
+            {% for target in future_salary_targets %}
+            <article>
+                <h4>{{ target.title }}</h4>
+                <p class="hint">{{ target.description }}</p>
+                {% if target.reason %}
+                    <p class="hint">{{ target.reason }}</p>
+                {% else %}
+                    <p class="future-target-value">{{ target.target_salary|floatformat:2 }} {{ current_currency }}</p>
+                    <p class="hint">Baseline: {{ target.base_label }} · {{ target.base_amount|floatformat:2 }} {{ current_currency }}</p>
+                    <p>
+                        <span class="delta-badge {% if target.delta_amount > 0 %}delta-badge--gain{% elif target.delta_amount < 0 %}delta-badge--loss{% else %}delta-badge--even{% endif %}">
+                            {% if target.delta_amount > 0 %}+{% elif target.delta_amount < 0 %}−{% endif %}{{ target.delta_amount|floatformat:2 }} {{ current_currency }}
+                        </span>
+                        <span class="hint">Gap vs current salary</span>
+                    </p>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+            <p class="hint">Add more salary history to calculate inflation-adjusted targets.</p>
+        {% endif %}
+    {% endif %}
+</section>
+
+<section>
+    <header>
         <h3>Employer totals to date</h3>
     </header>
     {% if employer_summaries %}

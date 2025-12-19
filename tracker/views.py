@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 from .services import (
     build_employer_compensation_summary,
+    build_future_salary_targets,
     build_inflation_gap_report,
     build_salary_timeline,
 )
@@ -72,6 +73,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             preferences.inflation_source,
             preferences.inflation_manual_entry,
         )
+        future_targets, future_targets_message, future_targets_period = build_future_salary_targets(user, preferences)
         context.update(
             {
                 "salary_form": SalaryEntryForm(user=user),
@@ -84,6 +86,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 "baseline_mode": preferences.inflation_baseline_mode,
                 "manual_baseline_entry": preferences.inflation_manual_entry,
                 "today": timezone.now().date(),
+                "future_salary_targets": future_targets,
+                "future_salary_targets_message": future_targets_message,
+                "future_salary_targets_period": future_targets_period,
             }
         )
         return context

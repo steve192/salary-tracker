@@ -12,7 +12,12 @@ from tracker.models import (
     SalaryEntry,
     UserPreference,
 )
-from tracker.services import build_employer_compensation_summary, build_inflation_gap_report, build_salary_timeline
+from tracker.services import (
+    build_employer_compensation_summary,
+    build_future_salary_targets,
+    build_inflation_gap_report,
+    build_salary_timeline,
+)
 
 
 class BuildSalaryTimelineTests(TestCase):
@@ -278,3 +283,76 @@ class InflationGapReportTests(TestCase):
         self.assertFalse(source_report.is_complete)
         self.assertGreater(source_report.missing_months, 0)
         self.assertGreater(len(source_report.missing_ranges), 0)
+
+
+class FutureSalaryTargetsTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="future@example.com", password="pass12345")
+        self.employer = Employer.objects.create(user=self.user, name="Future Co")
+        self.source = InflationSource.objects.create(
+            code=InflationSourceChoices.ECB_GERMANY,
+            label="ECB Germany",
+            description="",
+            available_to_users=True,
+            is_active=True,
+        )
+        self.preferences = UserPreference.objects.create(user=self.user, inflation_source=self.source)
+        self.first_entry = SalaryEntry.objects.create(
+            user=self.user,
+            employer=self.employer,
+            entry_type=SalaryEntry.EntryType.REGULAR,
+            effective_date=date(2023, 1, 1),
+            amount=Decimal("1000.00"),
+        )
+        self.current_entry = SalaryEntry.objects.create(
+            user=self.user,
+            employer=self.employer,
+            entry_type=SalaryEntry.EntryType.REGULAR,
+            effective_date=date(2024, 1, 1),
+            amount=Decimal("1500.00"),
+        )
+
+    def _seed_rates(self):
+        InflationRate.objects.create(source=self.source, period=date(2023, 1, 1), index_value=Decimal("100.0"))
+        InflationRate.objects.create(source=self.source, period=date(2024, 1, 1), index_value=Decimal("108.0"))
+        InflationRate.objects.create(source=self.source, period=date(2024, 3, 1), index_value=Decimal("110.0"))
+
+    def test_missing_source_returns_message(self):
+        self.preferences.inflation_source = None
+        self.preferences.save(update_fields=["inflation_source"])
+
+        targets, message, period = build_future_salary_targets(self.user, preferences=self.preferences)
+
+        self.assertEqual(targets, [])
+        self.assertIsNotNone(message)
+        self.assertIsNone(period)
+
+    def test_targets_include_last_raise_and_employer_start(self):
+        self._seed_rates()
+
+        targets, message, period = build_future_salary_targets(self.user, preferences=self.preferences)
+
+        self.assertIsNone(message)
+        self.assertEqual(period, date(2024, 3, 1))
+        self.assertGreaterEqual(len(targets), 2)
+        target_map = {target.key: target for target in targets}
+        self.assertIn("last-raise", target_map)
+        self.assertIn("employer-start", target_map)
+        last_raise = target_map["last-raise"]
+        self.assertIsNone(last_raise.reason)
+        self.assertGreater(last_raise.target_salary, self.current_entry.amount)
+        self.assertEqual(
+            last_raise.delta_amount,
+            (last_raise.target_salary - self.current_entry.amount).quantize(Decimal("0.01")),
+        )
+
+    def test_manual_baseline_target_appears_when_preference_set(self):
+        self._seed_rates()
+        self.preferences.inflation_manual_entry = self.first_entry
+        self.preferences.save(update_fields=["inflation_manual_entry"])
+
+        targets, message, _ = build_future_salary_targets(self.user, preferences=self.preferences)
+
+        target_map = {target.key: target for target in targets}
+        self.assertIn("manual-baseline", target_map)
+        self.assertIsNone(target_map["manual-baseline"].reason)

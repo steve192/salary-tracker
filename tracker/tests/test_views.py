@@ -42,6 +42,10 @@ class DashboardViewTests(TestCase):
         self.assertGreater(len(timeline["labels"]), 0)
         self.assertIn("salary_form", response.context)
         self.assertIn("employer_summaries", response.context)
+        self.assertIn("future_salary_targets", response.context)
+        self.assertEqual(response.context["future_salary_targets"], [])
+        self.assertIsNone(response.context["future_salary_targets_period"])
+        self.assertIsNotNone(response.context["future_salary_targets_message"])
 
 
 @override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)
