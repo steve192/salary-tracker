@@ -2,7 +2,15 @@
   "branches": ["main"],
   "tagFormat": "v${version}",
   "plugins": [
-    "@semantic-release/commit-analyzer",
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits",
+        "releaseRules": [
+          { "type": "chore", "scope": "deps", "release": "patch" }
+        ]
+      }
+    ],
     "@semantic-release/release-notes-generator",
     [
       "@semantic-release/github",
