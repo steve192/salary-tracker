@@ -1,9 +1,10 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
     <title>{% block title %}Salary Tracker{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/vendor/pico.min.css' %}">
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
@@ -26,13 +27,15 @@
             <ul>
                 {% if user.is_authenticated %}
                 <li>{{ user.email }}</li>
+                {% if not desktop_mode %}
                 <li>
                     <form method="post" action="{% url 'logout' %}" style="display:inline">
                         {% csrf_token %}
                         <button type="submit" class="link">Logout</button>
                     </form>
                 </li>
-                {% else %}
+                {% endif %}
+                {% elif not desktop_mode %}
                 <li><a href="{% url 'login' %}">Login</a></li>
                 {% endif %}
             </ul>

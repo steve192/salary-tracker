@@ -1,0 +1,122 @@
+:root {
+  --bg-a: #0f172a;
+  --bg-b: #1f2a44;
+  --accent: #f97316;
+  --accent-soft: rgba(249, 115, 22, 0.25);
+  --text: #f8fafc;
+  --muted: rgba(248, 250, 252, 0.7);
+  --card: rgba(15, 23, 42, 0.75);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top, rgba(249, 115, 22, 0.2), transparent 50%),
+    linear-gradient(135deg, var(--bg-a), var(--bg-b));
+}
+
+.card {
+  width: min(360px, 80vw);
+  padding: 32px 28px 28px;
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.4);
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.logo {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 6px;
+  justify-content: center;
+  align-items: end;
+  margin: 0 auto 18px;
+  height: 36px;
+}
+
+.bar {
+  width: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), transparent);
+  box-shadow: 0 0 12px var(--accent-soft);
+  animation: rise 1.6s ease-in-out infinite;
+}
+
+.bar-1 {
+  height: 18px;
+}
+
+.bar-2 {
+  height: 30px;
+  animation-delay: 0.2s;
+}
+
+.bar-3 {
+  height: 24px;
+  animation-delay: 0.4s;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  letter-spacing: 0.3px;
+}
+
+p {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.dots span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes rise {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}

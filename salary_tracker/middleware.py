@@ -1,8 +1,9 @@
 import logging
+import os
 
 from django.apps import apps
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, login
 from django.utils import timezone
 from urllib.parse import urljoin
 
@@ -43,6 +44,34 @@ def _strip_script_name(url: str, script_name: str) -> str:
         stripped = url[len(script_name) :]
         return stripped or "/"
     return url
+
+
+def _is_static_or_media(path: str, script_name: str) -> bool:
+    static_url = settings.STATIC_URL or ""
+    media_url = settings.MEDIA_URL or ""
+    if _matches_prefix(path, static_url, script_name):
+        return True
+    if _matches_prefix(path, media_url, script_name):
+        return True
+    return False
+
+
+def _ensure_desktop_user():
+    user_model = get_user_model()
+    preference_model = apps.get_model("tracker", "UserPreference")
+    user = user_model.objects.order_by("id").first()
+    if user:
+        return user
+
+    email = os.environ.get("DJANGO_DESKTOP_USER_EMAIL", "desktop@local")
+    user = user_model.objects.create_user(
+        email=email,
+        is_admin=True,
+        is_staff=True,
+        is_superuser=True,
+    )
+    preference_model.objects.get_or_create(user=user)
+    return user
 
 
 class ProxyPrefixMiddleware:
@@ -98,6 +127,12 @@ class InitialSetupMiddleware:
         self._setup_complete = None
 
     def __call__(self, request):
+        if settings.DESKTOP_MODE:
+            if not self.user_model.objects.exists():
+                _ensure_desktop_user()
+            self._setup_complete = True
+            return self.get_response(request)
+
         if self._setup_complete is True:
             return self.get_response(request)
 
@@ -199,6 +234,40 @@ class OnboardingRequiredMiddleware:
             script_name,
         )
         return False
+
+
+class DesktopAutoLoginMiddleware:
+    """Automatically authenticate a single local user in desktop mode."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self._desktop_user_id = None
+
+    def __call__(self, request):
+        if not settings.DESKTOP_MODE:
+            return self.get_response(request)
+
+        if request.user.is_authenticated:
+            return self.get_response(request)
+
+        if _is_static_or_media(request.path, request.META.get("SCRIPT_NAME", "")):
+            return self.get_response(request)
+
+        user = self._get_or_create_user()
+        backend = settings.AUTHENTICATION_BACKENDS[0]
+        login(request, user, backend=backend)
+        return self.get_response(request)
+
+    def _get_or_create_user(self):
+        if self._desktop_user_id:
+            user_model = get_user_model()
+            try:
+                return user_model.objects.get(pk=self._desktop_user_id)
+            except user_model.DoesNotExist:
+                self._desktop_user_id = None
+        user = _ensure_desktop_user()
+        self._desktop_user_id = user.pk
+        return user
 
 
 class AbsoluteRedirectMiddleware:

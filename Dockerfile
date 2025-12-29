@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 ARG BUILD_VERSION="dev"
 ARG VCS_REF="local"
@@ -17,10 +17,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
+RUN pip install --no-cache-dir .
 RUN chmod +x entrypoint.sh
 
 EXPOSE 8000

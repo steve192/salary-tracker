@@ -64,14 +64,69 @@ Make sure you also use the .env.example (copy it to .env and populate the settin
 | `GUNICORN_WORKERS` | Gunicorn worker process count. | `3` |
 
 ## Local Development (without Docker)
+Python 3.12+ is required (see `pyproject.toml`).
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .
 cp .env.example .env  # adjust values as needed
 python manage.py migrate
 python manage.py runserver
 ```
 
 During local development you can leave `DJANGO_DB_PATH` unset to keep the SQLite file at the project root. Static assets are served via Django + Whitenoise, so no extra tooling is needed.
+
+Dependencies are managed via `pyproject.toml` (no `requirements.txt`).
+
+## Desktop App (Electron, local-only)
+This runs the Django backend locally and opens it inside an Electron window. Docker distribution remains unchanged.
+The desktop wrapper sets `DJANGO_DESKTOP_MODE=true` so a local default user is created and auto-signed in.
+
+1. Prepare the backend once (from the repo root):
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -e .
+   ```
+2. Install the Electron wrapper (from the repo root):
+   ```bash
+   cd desktop
+   npm install
+   ```
+3. Launch the desktop app:
+   ```bash
+   cd desktop
+   npm run dev
+   ```
+
+The desktop build uses `npm ci` in CI for reproducible installs, so keep `desktop/package-lock.json` committed.
+
+If you're using a virtualenv, activate it before running `npm run dev`, or set the Python path explicitly:
+```bash
+PYTHON=../.venv/bin/python npm run dev
+```
+
+Data is stored in your OS user data directory (`db.sqlite3`). To reset the app, delete that file.
+
+### Build desktop executables
+Run the build on the target OS.
+
+- Linux:
+  ```bash
+  ./desktop/scripts/build-linux.sh
+  ```
+- Windows (PowerShell):
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File desktop\\scripts\\build-windows.ps1
+  ```
+
+Artifacts are written to `desktop/dist/` (AppImage on Linux, portable `.exe` on Windows).
+The Linux build script uses the Python version declared in `pyproject.toml` and will download/build it via `pyenv` (with shared libs) if needed.
+If it needs to compile Python, install build dependencies first (Debian/Ubuntu example):
+```bash
+sudo apt-get update && sudo apt-get install -y \
+  build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev \
+  libsqlite3-dev libffi-dev liblzma-dev tk-dev uuid-dev
+```
+The Windows build script uses the Python version declared in `pyproject.toml` and will install it via `pyenv-win` if needed (requires `git`).

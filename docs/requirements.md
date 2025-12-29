@@ -25,6 +25,6 @@
 - CPI refresh flow upserts records and auto-enables `available_to_users` so users can immediately opt in to newly populated sources.
 
 ## Technical & Deployment
-- Django 5 + DRF backend, SQLite persistence, Pico.css + vanilla JS frontend, Chart.js 4 for charts.
+- Django 6 + DRF backend, SQLite persistence, Pico.css + vanilla JS frontend, Chart.js 4 for charts.
 - Docker image based on `python:3.12-slim`; entrypoint applies migrations, ensures an admin exists, collects static assets, and boots Gunicorn.
 - `.env.example` documents secrets, DB path, debug flag, timezone, and initial admin credentials; `docker-compose.yml` maps port 8000 and persists the SQLite database.

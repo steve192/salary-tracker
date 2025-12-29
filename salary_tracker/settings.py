@@ -42,6 +42,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "salary_tracker.middleware.DesktopAutoLoginMiddleware",
     "salary_tracker.middleware.OnboardingRequiredMiddleware",
     "salary_tracker.middleware.AutomatedInflationSyncMiddleware",
     "salary_tracker.middleware.AbsoluteRedirectMiddleware",
@@ -85,6 +86,7 @@ DATABASES = {
 
 AUTH_USER_MODEL = "accounts.User"
 ALLOW_SELF_REGISTRATION = os.environ.get("DJANGO_ALLOW_SELF_REGISTRATION", "false").lower() == "true"
+DESKTOP_MODE = os.environ.get("DJANGO_DESKTOP_MODE", "false").lower() == "true"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

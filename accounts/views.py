@@ -19,6 +19,8 @@ class RegisterView(FormView):
     success_url = reverse_lazy("onboarding")
 
     def dispatch(self, request, *args, **kwargs):
+        if settings.DESKTOP_MODE:
+            return redirect("dashboard")
         if not settings.ALLOW_SELF_REGISTRATION:
             messages.error(request, "Self-service registration is disabled by the administrator.")
             return redirect("login")
@@ -38,6 +40,8 @@ class InitialSetupView(FormView):
     success_url = reverse_lazy("onboarding")
 
     def dispatch(self, request, *args, **kwargs):
+        if settings.DESKTOP_MODE:
+            return redirect("dashboard")
         if User.objects.exists():
             return redirect("login")
         return super().dispatch(request, *args, **kwargs)

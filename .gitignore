@@ -8,5 +8,15 @@ __pycache__/
 .idea/
 .vscode/
 .venv
+build/
+desktop/node_modules/
+desktop/dist/
+desktop/backend/build/
+desktop/backend/dist/
+desktop/backend/.venv-build/
+desktop/backend/.pyenv/
+desktop/backend/.pyenv-win/
+desktop/backend/.venv-build
 
+salary_tracker.egg-info
 **/__pycache__/**

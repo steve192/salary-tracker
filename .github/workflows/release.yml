@@ -13,24 +13,199 @@ permissions:
   pull-requests: write
 
 jobs:
-  release:
-    name: Semantic release
+  prepare:
+    name: Dry run semantic release
     runs-on: ubuntu-latest
+    outputs:
+      next_version: ${{ steps.semantic_dry.outputs.new_release_version }}
+      release_tag: ${{ steps.semantic_dry.outputs.new_release_git_tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: "24.12.0"
+          node-version: "20"
+
+      - name: Semantic-release dry run
+        id: semantic_dry
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          semantic_version: 23
+          branches: main
+          dry_run: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  build-linux:
+    name: Build Linux + run tests
+    needs: prepare
+    if: needs.prepare.outputs.next_version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set versions
+        env:
+          NEXT_VERSION: ${{ needs.prepare.outputs.next_version }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["NEXT_VERSION"]
+          path = Path("pyproject.toml")
+          text = path.read_text()
+          text = re.sub(r'(?m)^version = "[^"]+"$', f'version = "{version}"', text)
+          path.write_text(text)
+          PY
+
+          node -e "const fs=require('fs'); const path='desktop/package.json'; const pkg=JSON.parse(fs.readFileSync(path,'utf8')); pkg.version=process.env.NEXT_VERSION; fs.writeFileSync(path, JSON.stringify(pkg,null,2)+'\\n');"
+
+      - name: Run backend tests
+        run: |
+          python -m venv .venv-ci
+          . .venv-ci/bin/activate
+          pip install --upgrade pip
+          pip install -e .
+          python manage.py test
+
+      - name: Build Docker image
+        env:
+          BUILD_VERSION: ${{ needs.prepare.outputs.next_version }}
+        run: |
+          docker build \
+            --build-arg BUILD_VERSION="$BUILD_VERSION" \
+            --build-arg VCS_REF="${GITHUB_SHA}" \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -t salary-tracker:test .
+
+      - name: Run tests in Docker image
+        run: |
+          docker run --rm --entrypoint python salary-tracker:test manage.py test
+
+      - name: Build Linux AppImage
+        env:
+          PYTHON: ${{ env.pythonLocation }}/bin/python
+        run: ./desktop/scripts/build-linux.sh
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: salary-tracker-linux
+          path: desktop/dist/*.AppImage
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows executable
+    needs: prepare
+    if: needs.prepare.outputs.next_version != ''
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set versions
+        env:
+          NEXT_VERSION: ${{ needs.prepare.outputs.next_version }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["NEXT_VERSION"]
+          path = Path("pyproject.toml")
+          text = path.read_text()
+          text = re.sub(r'(?m)^version = "[^"]+"$', f'version = "{version}"', text)
+          path.write_text(text)
+          PY
+
+          node -e "const fs=require('fs'); const path='desktop/package.json'; const pkg=JSON.parse(fs.readFileSync(path,'utf8')); pkg.version=process.env.NEXT_VERSION; fs.writeFileSync(path, JSON.stringify(pkg,null,2)+'\\n');"
+
+      - name: Build Windows executable
+        env:
+          PYTHON: ${{ env.pythonLocation }}\\python.exe
+        run: powershell -ExecutionPolicy Bypass -File desktop\\scripts\\build-windows.ps1
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: salary-tracker-windows
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Semantic release + attach artifacts
+    needs:
+      - prepare
+      - build-linux
+      - build-windows
+    if: needs.prepare.outputs.next_version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
       - name: Run semantic-release
+        id: semantic_release
         uses: cycjimmy/semantic-release-action@v4
         with:
           semantic_version: 23
           branches: main
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          RELEASE_TAG: ${{ steps.semantic_release.outputs.new_release_git_tag || format('v{0}', needs.prepare.outputs.next_version) }}
+        run: |
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "Missing release tag."
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" release-artifacts/** --clobber
