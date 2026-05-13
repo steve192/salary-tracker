@@ -1,3 +1,6 @@
+import { Chart, registerables } from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
+
 document.addEventListener("DOMContentLoaded", () => {
     const employerInput = document.querySelector("input[name='employer_name']");
     const suggestionsBox = document.getElementById("employer-suggestions");
@@ -150,12 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
         endLabel: window.end ? fmt.format(new Date(window.end)) : timeline.labels[timeline.labels.length - 1],
     }));
 
-    Chart.register(bonusHighlighter);
-    Chart.register(employerChangeMarker);
-    const zoomPlugin = window.ChartZoom || window["chartjs-plugin-zoom"];
-    if (zoomPlugin) {
-        Chart.register(zoomPlugin);
-    }
+    Chart.register(...registerables, bonusHighlighter, employerChangeMarker, zoomPlugin);
 
     const datasets = [
         {

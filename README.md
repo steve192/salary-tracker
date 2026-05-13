@@ -64,14 +64,18 @@ Make sure you also use the .env.example (copy it to .env and populate the settin
 | `GUNICORN_WORKERS` | Gunicorn worker process count. | `3` |
 
 ## Local Development (without Docker)
+Requires Python and Node.js/npm.
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+npm ci
+npm run build
 cp .env.example .env  # adjust values as needed
 python manage.py migrate
 python manage.py runserver
 ```
 
-During local development you can leave `DJANGO_DB_PATH` unset to keep the SQLite file at the project root. Static assets are served via Django + Whitenoise, so no extra tooling is needed.
+During local development you can leave `DJANGO_DB_PATH` unset to keep the SQLite file at the project root. Frontend assets are bundled from npm-managed packages into `static/js/dashboard.bundle.js`; Docker builds them automatically.

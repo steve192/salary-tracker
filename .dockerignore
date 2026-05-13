@@ -7,3 +7,7 @@ staticfiles/
 .gitignore
 .idea/
 .vscode/
+node_modules/
+static/js/vendor/
+static/js/dashboard.bundle.js
+static/js/dashboard.bundle.js.LEGAL.txt

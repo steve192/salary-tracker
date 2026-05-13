@@ -1,3 +1,11 @@
+FROM node:20-slim AS frontend
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY static/js ./static/js
+RUN npm ci && npm run build
+
 FROM python:3.14-slim
 
 ARG BUILD_VERSION="dev"
@@ -21,6 +29,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+COPY --from=frontend /app/static/js/dashboard.bundle.js ./static/js/dashboard.bundle.js
+COPY --from=frontend /app/static/js/dashboard.bundle.js.LEGAL.txt ./static/js/dashboard.bundle.js.LEGAL.txt
 RUN chmod +x entrypoint.sh
 
 EXPOSE 8000
