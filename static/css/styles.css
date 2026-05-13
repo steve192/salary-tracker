@@ -32,8 +32,65 @@ main.container {
 
 .chart-wrapper {
     position: relative;
-    max-height: 420px;
-    min-height: 512px;
+    width: 100%;
+    max-width: 100%;
+    min-height: clamp(360px, 58vh, 512px);
+    overflow: hidden;
+    touch-action: none;
+}
+
+.chart-wrapper canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    touch-action: none;
+}
+
+.chart-toolbar {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 2;
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid rgba(139, 148, 158, 0.35);
+    border-radius: 8px;
+    background: rgba(13, 17, 23, 0.78);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(8px);
+}
+
+.chart-toolbar button {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #f6f8fa;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.chart-toolbar button:hover,
+.chart-toolbar button:focus-visible {
+    background: rgba(88, 166, 255, 0.16);
+    color: #58a6ff;
+}
+
+.table-wrapper {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-wrapper table {
+    min-width: 680px;
 }
 
 section > header {
@@ -45,13 +102,6 @@ section > header {
 
 section > header h3 {
     margin: 0;
-}
-
-.chart-actions {
-    margin-left: auto;
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
 }
 
 nav a.active {
@@ -166,4 +216,20 @@ nav a.active {
     padding: 0.4rem 0.6rem;
     border: 1px solid #30363d;
     font-size: 0.9rem;
+}
+
+@media (max-width: 767px) {
+    .chart-wrapper {
+        min-height: 420px;
+    }
+
+    .chart-toolbar {
+        top: 0.5rem;
+        right: 0.5rem;
+    }
+
+    .chart-toolbar button {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
 }

@@ -97,58 +97,62 @@
         <button type="submit">Save entry</button>
     </form>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Employer</th>
-                <th>Type</th>
-                <th>Amount</th>
-                <th>Effective</th>
-                <th>End</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for entry in entries %}
-            <tr>
-                <td>{{ entry.employer.name }}</td>
-                <td>{{ entry.get_entry_type_display }}</td>
-                <td>{{ entry.amount }} {{ current_currency }}</td>
-                <td>{{ entry.effective_date }}</td>
-                <td>{{ entry.end_date|default:"–" }}</td>
-                <td>
-                    <form method="post" action="{% url 'salary-entry-delete' entry.pk %}">
-                        {% csrf_token %}
-                        <button type="submit" class="secondary">Delete</button>
-                    </form>
-                    {% if baseline_mode == "MANUAL" and entry.entry_type == "REGULAR" %}
-                        {% if manual_baseline_entry and manual_baseline_entry.pk == entry.pk %}
-                            <span class="hint">Inflation base</span>
-                        {% else %}
-                            <form method="post" action="{% url 'salary-entry-set-inflation-base' entry.pk %}">
-                                {% csrf_token %}
-                                <button type="submit" class="secondary">Select as inflation base</button>
-                            </form>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Employer</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Effective</th>
+                    <th>End</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td>{{ entry.employer.name }}</td>
+                    <td>{{ entry.get_entry_type_display }}</td>
+                    <td>{{ entry.amount }} {{ current_currency }}</td>
+                    <td>{{ entry.effective_date }}</td>
+                    <td>{{ entry.end_date|default:"–" }}</td>
+                    <td>
+                        <form method="post" action="{% url 'salary-entry-delete' entry.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="secondary">Delete</button>
+                        </form>
+                        {% if baseline_mode == "MANUAL" and entry.entry_type == "REGULAR" %}
+                            {% if manual_baseline_entry and manual_baseline_entry.pk == entry.pk %}
+                                <span class="hint">Inflation base</span>
+                            {% else %}
+                                <form method="post" action="{% url 'salary-entry-set-inflation-base' entry.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="secondary">Select as inflation base</button>
+                                </form>
+                            {% endif %}
                         {% endif %}
-                    {% endif %}
-                </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="6">No entries yet.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6">No entries yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 
 <section>
     <header>
         <h3>Compensation trend</h3>
-        <div class="chart-actions">
-            <button type="button" class="secondary" id="chartFullscreenToggle">Fullscreen</button>
-            <button type="button" class="secondary" id="chartZoomReset">Reset view</button>
-        </div>
     </header>
     <div class="chart-wrapper">
+        <div class="chart-toolbar" aria-label="Chart controls">
+            <button type="button" id="chartZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+            <button type="button" id="chartZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+            <button type="button" id="chartZoomReset" title="Reset view" aria-label="Reset view">↺</button>
+            <button type="button" id="chartFullscreenToggle" title="Enter fullscreen" aria-label="Enter fullscreen">⛶</button>
+        </div>
         <canvas id="salaryChart"></canvas>
     </div>
 </section>
@@ -328,9 +332,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/vendor/chart.umd.min.js' %}"></script>
-<script src="{% static 'js/vendor/chartjs-plugin-zoom.min.js' %}"></script>
-<script src="{% static 'js/dashboard.js' %}"></script>
+<script src="{% static 'js/dashboard.bundle.js' %}"></script>
 <script>
     document.addEventListener("DOMContentLoaded", () => {
         const entryTypeField = document.getElementById("id_entry_type");

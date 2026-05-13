@@ -1,3 +1,6 @@
+import { Chart, registerables } from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
+
 document.addEventListener("DOMContentLoaded", () => {
     const employerInput = document.querySelector("input[name='employer_name']");
     const suggestionsBox = document.getElementById("employer-suggestions");
@@ -150,12 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
         endLabel: window.end ? fmt.format(new Date(window.end)) : timeline.labels[timeline.labels.length - 1],
     }));
 
-    Chart.register(bonusHighlighter);
-    Chart.register(employerChangeMarker);
-    const zoomPlugin = window.ChartZoom || window["chartjs-plugin-zoom"];
-    if (zoomPlugin) {
-        Chart.register(zoomPlugin);
-    }
+    Chart.register(...registerables, bonusHighlighter, employerChangeMarker, zoomPlugin);
 
     const datasets = [
         {
@@ -205,21 +203,87 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    const calculatePaddedRange = (values) => {
+        const minValue = Math.min(...values);
+        const maxValue = Math.max(...values);
+        const range = maxValue - minValue || Math.abs(maxValue) || 1;
+        const padding = range * 0.1;
+        return {
+            min: minValue - padding,
+            max: maxValue + padding,
+        };
+    };
+
     const numericValues = datasets
         .flatMap((dataset) => dataset.data)
-        .filter((value) => typeof value === "number");
-    const minValue = Math.min(...numericValues);
-    const maxValue = Math.max(...numericValues);
-    const range = maxValue - minValue || Math.abs(maxValue) || 1;
-    const padding = range * 0.1;
-    const suggestedMin = minValue - padding;
-    const suggestedMax = maxValue + padding;
+        .filter((value) => typeof value === "number" && Number.isFinite(value));
+    const fullYRange = calculatePaddedRange(numericValues);
+    const suggestedMin = fullYRange.min;
+    const suggestedMax = fullYRange.max;
+
+    const clampIndex = (value) => Math.max(0, Math.min(timeline.labels.length - 1, value));
+    const scaleValueToIndex = (value) => {
+        if (typeof value === "number" && Number.isFinite(value)) {
+            return value;
+        }
+        const index = timeline.labels.indexOf(value);
+        return index === -1 ? 0 : index;
+    };
+
+    const getVisibleIndexRange = (chart) => {
+        const xScale = chart.scales.x;
+        const minIndex = clampIndex(Math.floor(scaleValueToIndex(xScale.min)));
+        const maxIndex = clampIndex(Math.ceil(scaleValueToIndex(xScale.max)));
+        return {
+            min: Math.min(minIndex, maxIndex),
+            max: Math.max(minIndex, maxIndex),
+        };
+    };
+
+    const visibleYValues = (chart) => {
+        const visibleRange = getVisibleIndexRange(chart);
+        return chart.data.datasets.flatMap((dataset, datasetIndex) => {
+            if (!chart.isDatasetVisible(datasetIndex)) {
+                return [];
+            }
+            return dataset.data
+                .slice(visibleRange.min, visibleRange.max + 1)
+                .filter((value) => typeof value === "number" && Number.isFinite(value));
+        });
+    };
+
+    const setYAxisRange = (chart, range) => {
+        const yScaleOptions = chart.options.scales.y;
+        yScaleOptions.min = range.min;
+        yScaleOptions.max = range.max;
+        chart.update("none");
+    };
+
+    const restoreFullYAxisRange = (chart) => {
+        const yScaleOptions = chart.options.scales.y;
+        delete yScaleOptions.min;
+        delete yScaleOptions.max;
+        yScaleOptions.suggestedMin = suggestedMin;
+        yScaleOptions.suggestedMax = suggestedMax;
+        chart.update("none");
+    };
+
+    const fitYAxisToVisibleData = (chart) => {
+        const values = visibleYValues(chart);
+        if (!values.length) {
+            restoreFullYAxisRange(chart);
+            return;
+        }
+        setYAxisRange(chart, calculatePaddedRange(values));
+    };
+
+    const scheduleVisibleYAxisFit = (chart) => {
+        window.requestAnimationFrame(() => fitYAxisToVisibleData(chart));
+    };
 
     const chartWrapper = canvas.closest(".chart-wrapper");
     const ctx = canvas.getContext("2d");
-    if (chartWrapper) {
-        chartWrapper.style.height = "100%";
-    }
+    const supportsDragZoom = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     const salaryChart = new Chart(ctx, {
         type: "line",
         data: {
@@ -231,16 +295,27 @@ document.addEventListener("DOMContentLoaded", () => {
             maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
             plugins: {
-                legend: { position: "bottom" },
+                legend: {
+                    position: "bottom",
+                    onClick(event, legendItem, legend) {
+                        Chart.defaults.plugins.legend.onClick.call(this, event, legendItem, legend);
+                        scheduleVisibleYAxisFit(legend.chart);
+                    },
+                },
                 tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.formattedValue}` } },
                 bonusHighlighter: { windows },
                 employerChangeMarker: { switches: timeline.employerSwitches || [] },
                 zoom: {
                     limits: { x: { min: timeline.labels[0], max: timeline.labels[timeline.labels.length - 1] } },
-                    pan: { enabled: true, mode: "x" },
+                    pan: {
+                        enabled: !supportsDragZoom,
+                        mode: "x",
+                        onPan: ({ chart }) => scheduleVisibleYAxisFit(chart),
+                        onPanComplete: ({ chart }) => scheduleVisibleYAxisFit(chart),
+                    },
                     zoom: {
                         drag: {
-                            enabled: true,
+                            enabled: supportsDragZoom,
                             backgroundColor: "rgba(88, 166, 255, 0.12)",
                             borderColor: "#58a6ff",
                             borderWidth: 1,
@@ -248,6 +323,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         wheel: { enabled: true },
                         pinch: { enabled: true },
                         mode: "x",
+                        onZoom: ({ chart }) => scheduleVisibleYAxisFit(chart),
+                        onZoomComplete: ({ chart }) => scheduleVisibleYAxisFit(chart),
                     },
                 },
             },
@@ -262,10 +339,46 @@ document.addEventListener("DOMContentLoaded", () => {
         },
     });
 
+    const chartCenterPoint = (chart) => {
+        const area = chart.chartArea;
+        return {
+            x: (area.left + area.right) / 2,
+            y: (area.top + area.bottom) / 2,
+        };
+    };
+
+    const zoomChartHorizontally = (chart, factor) => {
+        if (!chart.zoom) return;
+        chart.zoom(
+            {
+                x: factor,
+                y: 1,
+                focalPoint: chartCenterPoint(chart),
+            },
+            "zoom",
+        );
+        scheduleVisibleYAxisFit(chart);
+    };
+
+    const zoomInButton = document.getElementById("chartZoomIn");
+    if (zoomInButton && salaryChart.zoom) {
+        zoomInButton.addEventListener("click", () => {
+            zoomChartHorizontally(salaryChart, 1.3);
+        });
+    }
+
+    const zoomOutButton = document.getElementById("chartZoomOut");
+    if (zoomOutButton && salaryChart.zoom) {
+        zoomOutButton.addEventListener("click", () => {
+            zoomChartHorizontally(salaryChart, 0.77);
+        });
+    }
+
     const resetZoomButton = document.getElementById("chartZoomReset");
     if (resetZoomButton && salaryChart.resetZoom) {
         resetZoomButton.addEventListener("click", () => {
             salaryChart.resetZoom();
+            restoreFullYAxisRange(salaryChart);
         });
     }
 
@@ -273,7 +386,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const updateFullscreenLabel = () => {
         if (!fullscreenButton || !chartWrapper) return;
         const active = document.fullscreenElement === chartWrapper;
-        fullscreenButton.textContent = active ? "Exit fullscreen" : "Fullscreen";
+        fullscreenButton.textContent = active ? "⛶" : "⛶";
+        fullscreenButton.title = active ? "Exit fullscreen" : "Enter fullscreen";
+        fullscreenButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
     };
 
     if (fullscreenButton && chartWrapper && chartWrapper.requestFullscreen) {

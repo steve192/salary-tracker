@@ -10,3 +10,7 @@ __pycache__/
 .venv
 
 **/__pycache__/**
+node_modules/
+/static/js/vendor/
+/static/js/dashboard.bundle.js
+/static/js/dashboard.bundle.js.LEGAL.txt
