@@ -5,7 +5,7 @@
     "build": "esbuild static/js/dashboard.js --bundle --minify --legal-comments=linked --outfile=static/js/dashboard.bundle.js"
   },
   "dependencies": {
-    "chart.js": "4.4.6",
+    "chart.js": "4.5.1",
     "chartjs-plugin-zoom": "2.0.1",
     "hammerjs": "2.0.8"
   },
