@@ -146,6 +146,33 @@
     <header>
         <h3>Compensation trend</h3>
     </header>
+    {% if timeline.inflationMeta.ready %}
+    <div class="chart-mode-row">
+        <div class="chart-mode-switch" aria-label="Chart value mode">
+            <button type="button" class="chart-mode-switch__button active" data-chart-mode="nominal" aria-pressed="true">Actual money</button>
+            <button type="button" class="chart-mode-switch__button" data-chart-mode="purchasing-power" aria-pressed="false">Buying power</button>
+        </div>
+        {% with inflation_mode=timeline.inflationMeta.mode %}
+            {% if inflation_mode == "LAST_INCREASE" %}
+                {% with comparison_point="since your last raise" comparison_reference="your last raise" target_label="Salary needed after each raise" reference_label="Salary at the last raise" %}
+                    {% include "tracker/partials/chart_explanation.html" %}
+                {% endwith %}
+            {% elif inflation_mode == "PER_EMPLOYER" %}
+                {% with comparison_point="since joining each employer" comparison_reference="when you joined that employer" target_label="Salary needed since joining employer" reference_label="Salary when joining the employer" %}
+                    {% include "tracker/partials/chart_explanation.html" %}
+                {% endwith %}
+            {% elif inflation_mode == "MANUAL" %}
+                {% with comparison_point="since your chosen start point" comparison_reference="at your chosen start point" target_label="Salary needed from your chosen start" reference_label="Salary at your chosen start point" %}
+                    {% include "tracker/partials/chart_explanation.html" %}
+                {% endwith %}
+            {% else %}
+                {% with comparison_point="since your first salary entry" comparison_reference="at your first salary entry" target_label="Salary needed to keep up" reference_label="Salary at your first salary entry" %}
+                    {% include "tracker/partials/chart_explanation.html" %}
+                {% endwith %}
+            {% endif %}
+        {% endwith %}
+    </div>
+    {% endif %}
     <div class="chart-wrapper">
         <div class="chart-toolbar" aria-label="Chart controls">
             <button type="button" id="chartZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
@@ -177,16 +204,64 @@
                         <p class="hint">{{ target.reason }}</p>
                     {% else %}
                         <p class="future-target-value">{{ target.target_salary|floatformat:2 }} {{ current_currency }}</p>
-                        <p class="hint">Baseline: {{ target.base_label }} · {{ target.base_amount|floatformat:2 }} {{ current_currency }}</p>
-                        {% if target.inflation_percent is not None %}
-                        <p class="hint">Inflation since baseline: {{ target.inflation_percent|floatformat:2 }}%</p>
-                        {% endif %}
-                        <p>
-                            <span class="delta-badge {% if target.delta_amount > 0 %}delta-badge--gain{% elif target.delta_amount < 0 %}delta-badge--loss{% else %}delta-badge--even{% endif %}">
-                                {% if target.delta_amount > 0 %}+{% elif target.delta_amount < 0 %}−{% endif %}{{ target.delta_amount|floatformat:2 }} {{ current_currency }}
+                        <p class="target-metric">
+                            <span class="target-metric__label">
+                                {% if target.key == "last-raise" %}
+                                    Last increase
+                                {% elif target.key == "employer-start" %}
+                                    Joined employer
+                                {% else %}
+                                    Baseline
+                                {% endif %}
                             </span>
-                            <span class="hint">Gap vs current salary</span>
-                    </p>
+                            <span class="target-metric__value">{{ target.base_label }} · {{ target.base_amount|floatformat:2 }} {{ current_currency }}</span>
+                        </p>
+                        {% if target.inflation_percent is not None %}
+                        <p class="target-metric">
+                            <span class="target-metric__label">
+                                {% if target.key == "last-raise" %}
+                                    Inflation since last increase
+                                {% elif target.key == "employer-start" %}
+                                    Inflation since joining employer
+                                {% else %}
+                                    Inflation since baseline
+                                {% endif %}
+                            </span>
+                            <span class="target-metric__value">{{ target.inflation_percent|floatformat:2 }}%</span>
+                        </p>
+                        {% endif %}
+                        {% if target.key == "employer-start" and target.salary_increase_percent is not None %}
+                        <p class="target-metric">
+                            <span class="target-metric__label">Salary increase since joining employer</span>
+                            <span class="target-metric__value">{{ target.salary_increase_percent|floatformat:2 }}%</span>
+                        </p>
+                        {% elif target.key == "manual-baseline" and target.salary_increase_percent is not None %}
+                        <p class="target-metric">
+                            <span class="target-metric__label">Salary increase since manual baseline</span>
+                            <span class="target-metric__value">{{ target.salary_increase_percent|floatformat:2 }}%</span>
+                        </p>
+                        {% endif %}
+                        <p class="target-gap">
+                            <span class="delta-badge {% if target.delta_amount > 0 %}delta-badge--loss{% elif target.delta_amount < 0 %}delta-badge--gain{% else %}delta-badge--even{% endif %}">
+                                {% if target.delta_amount > 0 %}
+                                    {{ target.delta_abs_amount|floatformat:2 }} {{ current_currency }} ({{ target.delta_abs_percent|floatformat:2 }}%)
+                                {% elif target.delta_amount < 0 %}
+                                    {{ target.delta_abs_amount|floatformat:2 }} {{ current_currency }} ({{ target.delta_abs_percent|floatformat:2 }}%) above inflation
+                                {% else %}
+                                    0.00 {{ current_currency }} (0.00%)
+                                {% endif %}
+                            </span>
+                            <span class="hint">{% if target.delta_amount > 0 %}Raise needed to catch up{% elif target.delta_amount < 0 %}You are ahead of inflation{% else %}Matched with inflation{% endif %}</span>
+                        </p>
+                        <p class="target-conclusion {% if target.delta_amount > 0 %}target-conclusion--bad{% elif target.delta_amount < 0 %}target-conclusion--good{% else %}target-conclusion--even{% endif %}">
+                            {% if target.delta_amount > 0 %}
+                                Your salary is below the inflation-adjusted target.
+                            {% elif target.delta_amount < 0 %}
+                                Your salary is above the inflation-adjusted target.
+                            {% else %}
+                                Your salary exactly matches the inflation-adjusted target.
+                            {% endif %}
+                        </p>
                 {% endif %}
             </article>
             {% endfor %}

@@ -155,16 +155,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
     Chart.register(...registerables, bonusHighlighter, employerChangeMarker, zoomPlugin);
 
-    const datasets = [
+    const hasInflationSeries =
+        timeline.inflationMeta?.ready &&
+        Array.isArray(timeline.inflationSeries) &&
+        timeline.inflationSeries.some((value) => typeof value === "number");
+    const hasPurchasingPowerSeries =
+        hasInflationSeries &&
+        Array.isArray(timeline.purchasingPowerBaseSeries) &&
+        Array.isArray(timeline.purchasingPowerTotalSeries) &&
+        timeline.purchasingPowerBaseSeries.some((value) => typeof value === "number");
+
+    const inflationLabel = (() => {
+        const mode = timeline.inflationMeta?.mode;
+        switch (mode) {
+            case "PER_EMPLOYER":
+                return "Salary needed since joining employer";
+            case "LAST_INCREASE":
+                return "Salary needed after each raise";
+            case "MANUAL":
+                return "Salary needed from your chosen start";
+            default:
+                return "Salary needed to keep up";
+        }
+    })();
+
+    const nominalDatasets = [
         {
-            label: "Base salary",
+            label: "Monthly salary",
             data: timeline.baseSeries,
             borderColor: "#58a6ff",
             tension: 0.3,
             pointRadius: 2,
         },
         {
-            label: "Total compensation (incl. bonuses)",
+            label: "Salary plus bonuses",
             data: timeline.totalSeries,
             borderColor: "#f78166",
             tension: 0.3,
@@ -173,25 +197,8 @@ document.addEventListener("DOMContentLoaded", () => {
         },
     ];
 
-    const hasInflationSeries =
-        timeline.inflationMeta?.ready &&
-        Array.isArray(timeline.inflationSeries) &&
-        timeline.inflationSeries.some((value) => typeof value === "number");
     if (hasInflationSeries) {
-        const inflationLabel = (() => {
-            const mode = timeline.inflationMeta?.mode;
-            switch (mode) {
-                case "PER_EMPLOYER":
-                    return "Inflation-adjusted per-employer baseline";
-                case "LAST_INCREASE":
-                    return "Inflation-adjusted raise segments";
-                case "MANUAL":
-                    return "Inflation-adjusted custom baseline";
-                default:
-                    return "Inflation-adjusted initial salary";
-            }
-        })();
-        datasets.push({
+        nominalDatasets.push({
             label: inflationLabel,
             data: timeline.inflationSeries,
             borderColor: "#0ea5e9",
@@ -202,6 +209,44 @@ document.addEventListener("DOMContentLoaded", () => {
             spanGaps: true,
         });
     }
+
+    const purchasingPowerDatasets = hasPurchasingPowerSeries
+        ? [
+              {
+                  label: "Monthly salary value",
+                  data: timeline.purchasingPowerBaseSeries,
+                  borderColor: "#58a6ff",
+                  tension: 0.3,
+                  pointRadius: 2,
+                  spanGaps: true,
+              },
+              {
+                  label: "Salary plus bonuses value",
+                  data: timeline.purchasingPowerTotalSeries,
+                  borderColor: "#f78166",
+                  tension: 0.3,
+                  borderDash: [6, 6],
+                  pointRadius: 0,
+                  spanGaps: true,
+              },
+              {
+                  label: "Starting salary value",
+                  data: timeline.purchasingPowerReferenceSeries,
+                  borderColor: "#0ea5e9",
+                  borderWidth: 2,
+                  tension: 0,
+                  borderDash: [3, 3],
+                  pointRadius: 0,
+                  spanGaps: true,
+              },
+          ]
+        : nominalDatasets;
+
+    const chartModes = {
+        nominal: nominalDatasets,
+        "purchasing-power": purchasingPowerDatasets,
+    };
+    let activeChartMode = "nominal";
 
     const calculatePaddedRange = (values) => {
         const minValue = Math.min(...values);
@@ -214,12 +259,15 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     };
 
-    const numericValues = datasets
+    const numericDatasetValues = (chartDatasets) =>
+        chartDatasets
         .flatMap((dataset) => dataset.data)
         .filter((value) => typeof value === "number" && Number.isFinite(value));
-    const fullYRange = calculatePaddedRange(numericValues);
-    const suggestedMin = fullYRange.min;
-    const suggestedMax = fullYRange.max;
+
+    const paddedRangeForDatasets = (chartDatasets) => calculatePaddedRange(numericDatasetValues(chartDatasets));
+    const initialYRange = paddedRangeForDatasets(chartModes[activeChartMode]);
+    const suggestedMin = initialYRange.min;
+    const suggestedMax = initialYRange.max;
 
     const clampIndex = (value) => Math.max(0, Math.min(timeline.labels.length - 1, value));
     const scaleValueToIndex = (value) => {
@@ -261,10 +309,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const restoreFullYAxisRange = (chart) => {
         const yScaleOptions = chart.options.scales.y;
+        const fullYRange = paddedRangeForDatasets(chart.data.datasets);
         delete yScaleOptions.min;
         delete yScaleOptions.max;
-        yScaleOptions.suggestedMin = suggestedMin;
-        yScaleOptions.suggestedMax = suggestedMax;
+        yScaleOptions.suggestedMin = fullYRange.min;
+        yScaleOptions.suggestedMax = fullYRange.max;
         chart.update("none");
     };
 
@@ -288,7 +337,7 @@ document.addEventListener("DOMContentLoaded", () => {
         type: "line",
         data: {
             labels: timeline.labels,
-            datasets,
+            datasets: chartModes[activeChartMode],
         },
         options: {
             responsive: true,
@@ -337,6 +386,27 @@ document.addEventListener("DOMContentLoaded", () => {
                 },
             },
         },
+    });
+
+    document.querySelectorAll("[data-chart-mode]").forEach((button) => {
+        const mode = button.dataset.chartMode;
+        if (!chartModes[mode] || (mode === "purchasing-power" && !hasPurchasingPowerSeries)) {
+            button.hidden = true;
+            return;
+        }
+        button.addEventListener("click", () => {
+            activeChartMode = mode;
+            salaryChart.data.datasets = chartModes[activeChartMode];
+            document.querySelectorAll("[data-chart-mode]").forEach((modeButton) => {
+                const active = modeButton.dataset.chartMode === activeChartMode;
+                modeButton.classList.toggle("active", active);
+                modeButton.setAttribute("aria-pressed", active ? "true" : "false");
+            });
+            document.querySelectorAll("[data-chart-explanation]").forEach((explanation) => {
+                explanation.hidden = explanation.dataset.chartExplanation !== activeChartMode;
+            });
+            scheduleVisibleYAxisFit(salaryChart);
+        });
     });
 
     const chartCenterPoint = (chart) => {

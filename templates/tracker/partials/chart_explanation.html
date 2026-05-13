@@ -1,0 +1,23 @@
+<details class="chart-explanation">
+    <summary>Chart explanation</summary>
+    <div class="chart-explanation__content" data-chart-explanation="nominal">
+        <p>
+            <strong>Actual money</strong> shows the amounts you were paid at the time. It also shows the salary you would need today to keep the same buying power {{ comparison_point }}. Use this view when you want to compare your actual salary against the inflation-adjusted salary you would need for everyday costs to feel the same.
+        </p>
+        <ul class="chart-line-list">
+            <li><span class="chart-line-sample chart-line-sample--salary"></span><span><strong>Monthly salary</strong> is your regular monthly salary before bonuses.</span></li>
+            <li><span class="chart-line-sample chart-line-sample--bonus"></span><span><strong>Salary plus bonuses</strong> spreads time-limited bonuses across their active months and adds them to salary.</span></li>
+            <li><span class="chart-line-sample chart-line-sample--target"></span><span><strong>{{ target_label }}</strong> shows what you would have to earn to afford roughly the same things today as {{ comparison_reference }}. If your salary line is below this line, your pay has not fully kept up with inflation.</span></li>
+        </ul>
+    </div>
+    <div class="chart-explanation__content" data-chart-explanation="purchasing-power" hidden>
+        <p>
+            <strong>Buying power</strong> converts every salary point back to what it would have been worth {{ comparison_reference }}. This view removes inflation from the chart. A flat line means your salary kept its value; a falling line means your salary buys less than it used to.
+        </p>
+        <ul class="chart-line-list">
+            <li><span class="chart-line-sample chart-line-sample--salary"></span><span><strong>Monthly salary value</strong> is your regular salary after removing inflation {{ comparison_point }}.</span></li>
+            <li><span class="chart-line-sample chart-line-sample--bonus"></span><span><strong>Salary plus bonuses value</strong> shows what salary and prorated bonuses are worth after removing inflation {{ comparison_point }}.</span></li>
+            <li><span class="chart-line-sample chart-line-sample--target"></span><span><strong>{{ reference_label }}</strong> is the reference line. If your salary value stays at or above this line, your pay has kept up with inflation.</span></li>
+        </ul>
+    </div>
+</details>

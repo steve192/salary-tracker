@@ -60,6 +60,9 @@ class FutureSalaryTarget:
     base_amount: Optional[Decimal]
     reason: Optional[str]
     inflation_percent: Optional[Decimal]
+    salary_increase_percent: Optional[Decimal]
+    delta_abs_amount: Optional[Decimal]
+    delta_abs_percent: Optional[Decimal]
 
 
 @dataclass
@@ -285,6 +288,43 @@ def _build_inflation_series(
     return inflation_series
 
 
+def _build_purchasing_power_series(
+    timeline: List[TimelinePoint],
+    rate_map: Dict[date, Decimal],
+    setup: BaselineSetup,
+) -> Tuple[List[float | None], List[float | None], List[float | None]]:
+    base_series: List[float | None] = []
+    total_series: List[float | None] = []
+    reference_series: List[float | None] = []
+    quantizer = Decimal("0.01")
+    for point in timeline:
+        base_point, base_idx = setup.selector(point)
+        if not base_point or not base_idx:
+            base_series.append(None)
+            total_series.append(None)
+            reference_series.append(None)
+            continue
+
+        if setup.skip_prehistory and point.period < base_point.period:
+            base_series.append(None)
+            total_series.append(None)
+            reference_series.append(None)
+            continue
+
+        period_index = rate_map.get(point.period)
+        if not period_index:
+            base_series.append(None)
+            total_series.append(None)
+            reference_series.append(None)
+            continue
+
+        multiplier = period_index / base_idx
+        base_series.append(float((point.base_amount / multiplier).quantize(quantizer)))
+        total_series.append(float((point.total_amount / multiplier).quantize(quantizer)))
+        reference_series.append(float(base_point.base_amount.quantize(quantizer)))
+    return base_series, total_series, reference_series
+
+
 def _inflation_projection(
     user,
     timeline: List[TimelinePoint],
@@ -292,7 +332,7 @@ def _inflation_projection(
     baseline_mode: Optional[str],
     source: Optional[InflationSource],
     manual_entry: Optional[SalaryEntry] = None,
-) -> Tuple[List[float | None], Dict[str, str | float | bool | None]]:
+) -> Tuple[List[float | None], List[float | None], List[float | None], List[float | None], Dict[str, str | float | bool | None]]:
     meta: Dict[str, str | float | bool | None] = {
         "ready": False,
         "source": source.label if source else None,
@@ -304,11 +344,11 @@ def _inflation_projection(
     }
     if not timeline:
         meta["reason"] = "missing-timeline"
-        return [], meta
+        return [], [], [], [], meta
 
     if not source:
         meta["reason"] = "no-source-selected"
-        return [], meta
+        return [], [], [], [], meta
 
     start_date, end_date = window
     rate_map = _build_rate_map(source, start_date, end_date)
@@ -318,12 +358,13 @@ def _inflation_projection(
     setup, reason = _build_baseline_setup(timeline, baseline_mode, rate_map, manual_entry)
     if reason or not setup:
         meta["reason"] = reason
-        return [], meta
+        return [], [], [], [], meta
 
     inflation_series = _build_inflation_series(timeline, rate_map, setup)
+    purchasing_power_base, purchasing_power_total, purchasing_power_reference = _build_purchasing_power_series(timeline, rate_map, setup)
     if not any(value is not None for value in inflation_series):
         meta["reason"] = "missing-series-data"
-        return inflation_series, meta
+        return inflation_series, purchasing_power_base, purchasing_power_total, purchasing_power_reference, meta
 
     meta.update(
         {
@@ -333,7 +374,7 @@ def _inflation_projection(
             "baseSalary": setup.base_salary,
         }
     )
-    return inflation_series, meta
+    return inflation_series, purchasing_power_base, purchasing_power_total, purchasing_power_reference, meta
 
 
 def _resolve_timeline_inputs(
@@ -367,6 +408,9 @@ def _empty_timeline_payload(
         "totalSeries": [],
         "bonusWindows": [],
         "inflationSeries": [],
+        "purchasingPowerBaseSeries": [],
+        "purchasingPowerTotalSeries": [],
+        "purchasingPowerReferenceSeries": [],
         "inflationMeta": {
             "ready": False,
             "source": inflation_source.label if inflation_source else None,
@@ -497,7 +541,13 @@ def build_salary_timeline(
 
     timeline, start_date, end_date, bonus_windows, employer_switches = _build_timeline_components(entries)
 
-    inflation_series, inflation_meta = _inflation_projection(
+    (
+        inflation_series,
+        purchasing_power_base_series,
+        purchasing_power_total_series,
+        purchasing_power_reference_series,
+        inflation_meta,
+    ) = _inflation_projection(
         user,
         timeline,
         (start_date, end_date),
@@ -512,6 +562,9 @@ def build_salary_timeline(
         "totalSeries": [float(point.total_amount) for point in timeline],
         "bonusWindows": bonus_windows,
         "inflationSeries": inflation_series,
+        "purchasingPowerBaseSeries": purchasing_power_base_series,
+        "purchasingPowerTotalSeries": purchasing_power_total_series,
+        "purchasingPowerReferenceSeries": purchasing_power_reference_series,
         "inflationMeta": inflation_meta,
         "employerSwitches": employer_switches,
     }
@@ -758,8 +811,9 @@ def build_future_salary_targets(
 
     current_employer_first = next((entry for entry in regular_entries if entry.employer_id == current_entry.employer_id), None)
     manual_entry = preferences.inflation_manual_entry
+    manual_mode_active = preferences.inflation_baseline_mode == UserPreference.InflationBaselineMode.MANUAL
     manual_candidate: Optional[SalaryEntry] = None
-    if manual_entry and manual_entry.user_id == user.id and manual_entry.entry_type == SalaryEntry.EntryType.REGULAR:
+    if manual_mode_active and manual_entry and manual_entry.user_id == user.id and manual_entry.entry_type == SalaryEntry.EntryType.REGULAR:
         manual_candidate = manual_entry
 
     start_periods = [
@@ -797,6 +851,9 @@ def build_future_salary_targets(
                 base_amount=None,
                 reason=missing_reason,
                 inflation_percent=None,
+                salary_increase_percent=None,
+                delta_abs_amount=None,
+                delta_abs_percent=None,
             )
         base_period = _month_start(base_entry.effective_date)
         if base_period > target_period:
@@ -810,6 +867,9 @@ def build_future_salary_targets(
                 base_amount=base_entry.amount,
                 reason="Baseline is in the future. Wait for new inflation data.",
                 inflation_percent=None,
+                salary_increase_percent=None,
+                delta_abs_amount=None,
+                delta_abs_percent=None,
             )
         base_index = rate_map.get(base_period)
         if not base_index:
@@ -823,11 +883,20 @@ def build_future_salary_targets(
                 base_amount=base_entry.amount,
                 reason="Missing CPI data for this baseline month. Refresh your inflation source.",
                 inflation_percent=None,
+                salary_increase_percent=None,
+                delta_abs_amount=None,
+                delta_abs_percent=None,
             )
         multiplier = target_index / base_index
         target_salary = (base_entry.amount * multiplier).quantize(Decimal("0.01"))
         delta = (target_salary - current_salary).quantize(Decimal("0.01"))
         inflation_percent = ((multiplier - Decimal("1")) * Decimal("100")).quantize(Decimal("0.01"))
+        salary_increase_percent = None
+        if base_entry.amount:
+            salary_increase_percent = ((current_salary / base_entry.amount - Decimal("1")) * Decimal("100")).quantize(Decimal("0.01"))
+        delta_abs_percent = None
+        if current_salary:
+            delta_abs_percent = ((abs(delta) / current_salary) * Decimal("100")).quantize(Decimal("0.01"))
         return FutureSalaryTarget(
             key=key,
             title=title,
@@ -838,6 +907,9 @@ def build_future_salary_targets(
             base_amount=base_entry.amount,
             reason=None,
             inflation_percent=inflation_percent,
+            salary_increase_percent=salary_increase_percent,
+            delta_abs_amount=abs(delta),
+            delta_abs_percent=delta_abs_percent,
         )
 
     targets = [
