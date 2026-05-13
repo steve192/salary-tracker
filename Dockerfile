@@ -1,4 +1,4 @@
-FROM node:20.20.2-slim AS frontend
+FROM node:24.14.1-slim AS frontend
 
 WORKDIR /app
 
