@@ -1,13 +1,18 @@
 import logging
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Optional
 
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Max
 from django.utils import timezone
 
-from .inflation import InflationFetchError, fetch_inflation_series
+from .inflation import (
+    InflationFetchError,
+    fetch_inflation_series,
+    get_inflation_series_definition,
+)
 from .models import InflationRate, InflationSource
 
 
@@ -22,6 +27,7 @@ class InflationRefreshResult:
 
 
 logger = logging.getLogger(__name__)
+MIN_REFRESH_RECORD_RETENTION_RATIO = 0.9
 
 
 def refresh_inflation_source(source: InflationSource) -> InflationRefreshResult:
@@ -34,7 +40,9 @@ def refresh_inflation_source(source: InflationSource) -> InflationRefreshResult:
     updated_count = 0
 
     if records:
+        _validate_refresh_replacement(source, records)
         with transaction.atomic():
+            _delete_stale_series_rows(source, records)
             for record in records:
                 _, created_flag = InflationRate.objects.update_or_create(
                     source=source,
@@ -64,6 +72,31 @@ def refresh_inflation_source(source: InflationSource) -> InflationRefreshResult:
     )
 
 
+def _validate_refresh_replacement(source: InflationSource, records) -> None:
+    incoming_periods = {record.period for record in records}
+    if len(incoming_periods) != len(records):
+        raise InflationFetchError("ECB service returned duplicate periods for this source.")
+
+    existing_count = source.rates.count()
+    if existing_count == 0:
+        return
+
+    # Refresh deletes rows that are absent from the fetched payload. If ECB returns
+    # a partial response during an outage or starts paging this endpoint, deleting
+    # the "missing" history would destroy valid local data.
+    minimum_expected = math.ceil(existing_count * MIN_REFRESH_RECORD_RETENTION_RATIO)
+    if len(records) < minimum_expected:
+        raise InflationFetchError(
+            f"Refusing to replace {existing_count} stored inflation rows with only {len(records)} fetched rows."
+        )
+
+
+def _delete_stale_series_rows(source: InflationSource, records) -> None:
+    # ECB can retire or rebase HICP series. Treat a refresh as the source of truth
+    # so rows from obsolete series/methodologies do not mix with current index data.
+    source.rates.exclude(period__in=[record.period for record in records]).delete()
+
+
 def get_last_month_start(reference_date: Optional[date] = None) -> date:
     """
     Returns the first day of the previous calendar month relative to the provided reference date (defaults to today).
@@ -81,19 +114,29 @@ def source_has_data_since(source: InflationSource, month_start: date) -> bool:
     return source.rates.filter(period__gte=month_start).exists()
 
 
+def source_has_current_series(source: InflationSource) -> bool:
+    """
+    Checks whether stored rows use the currently configured upstream series for this source.
+    """
+    series_definition = get_inflation_series_definition(source.code)
+    if not series_definition:
+        return True
+    total_rows = source.rates.count()
+    matching_rows = source.rates.filter(metadata__series_code=series_definition.series_code).count()
+    return total_rows > 0 and matching_rows == total_rows
+
+
 def ensure_recent_inflation_data(logger_instance=None) -> int:
     """
     Ensures all active inflation sources include data for the previous month. Returns the number of sources refreshed.
     """
     logger_ref = logger_instance or logger
     month_start = get_last_month_start()
-    stale_sources = (
-        InflationSource.objects.filter(is_active=True)
-        .annotate(latest_period=Max("rates__period"))
-        .filter(Q(latest_period__lt=month_start) | Q(latest_period__isnull=True))
-    )
+    active_sources = InflationSource.objects.filter(is_active=True).annotate(latest_period=Max("rates__period"))
     refreshed = 0
-    for source in stale_sources:
+    for source in active_sources:
+        if source.latest_period and source.latest_period >= month_start and source_has_current_series(source):
+            continue
         try:
             result = refresh_inflation_source(source)
         except InflationFetchError as exc:

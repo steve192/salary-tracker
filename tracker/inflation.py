@@ -9,8 +9,10 @@ import requests
 
 from .models import InflationSourceChoices
 
-ECB_SERIES_TEMPLATE = "ICP.M.{country_code}.N.000000.4.INX"
+ECB_SERIES_TEMPLATE = "HICP.M.{country_code}.N.000000.4D0.INX"
 ECB_BASE_URL = "https://data.ecb.europa.eu/data-detail-api/{series_code}"
+ECB_OBSERVATION_KIND = "index"
+ECB_EXPECTED_UNIT = "IX"
 ECB_COUNTRY_CODES = {
     InflationSourceChoices.ECB_AUSTRIA.value: "AT",
     InflationSourceChoices.ECB_BELGIUM.value: "BE",
@@ -57,15 +59,43 @@ class InflationRecord:
     metadata: dict
 
 
+@dataclass(frozen=True)
+class InflationSeriesDefinition:
+    series_code: str
+    observation_kind: str
+    expected_unit: str
+
+
+@dataclass(frozen=True)
+class ParsedObservation:
+    period: date
+    value: Decimal
+    row: dict
+
+
+ECB_SERIES_DEFINITIONS_BY_SOURCE = {
+    code: InflationSeriesDefinition(
+        series_code=series_code,
+        observation_kind=ECB_OBSERVATION_KIND,
+        expected_unit=ECB_EXPECTED_UNIT,
+    )
+    for code, series_code in ECB_SERIES_BY_SOURCE.items()
+}
+
+
 def fetch_inflation_series(source: str) -> List[InflationRecord]:
-    series_code = ECB_SERIES_BY_SOURCE.get(source)
-    if series_code:
-        return _fetch_ecb_series(series_code)
+    series_definition = get_inflation_series_definition(source)
+    if series_definition:
+        return _fetch_ecb_series(series_definition)
     raise InflationFetchError("Unsupported inflation source.")
 
 
-def _fetch_ecb_series(series_code: str) -> List[InflationRecord]:
-    endpoint = ECB_BASE_URL.format(series_code=series_code)
+def get_inflation_series_definition(source: str) -> InflationSeriesDefinition | None:
+    return ECB_SERIES_DEFINITIONS_BY_SOURCE.get(source)
+
+
+def _fetch_ecb_series(series_definition: InflationSeriesDefinition) -> List[InflationRecord]:
+    endpoint = ECB_BASE_URL.format(series_code=series_definition.series_code)
     try:
         response = requests.get(endpoint, timeout=20)
         response.raise_for_status()
@@ -77,42 +107,98 @@ def _fetch_ecb_series(series_code: str) -> List[InflationRecord]:
     if not rows:
         raise InflationFetchError("ECB service returned no data.")
 
-    records: List[InflationRecord] = []
+    observations = _parse_observations(rows)
+    if not observations:
+        raise InflationFetchError("ECB service returned no usable data.")
+
+    _validate_index_observations(series_definition, observations)
+    return _build_index_records(series_definition, observations)
+
+
+def _parse_observations(rows: List[dict]) -> List[ParsedObservation]:
+    observations: List[ParsedObservation] = []
     for row in rows:
         period_str = row.get("PERIOD") or row.get("period")
-        index_raw = row.get("OBS") or row.get("OBS_VALUE_AS_IS") or row.get("OBS_VALUE_ENTITY")
-        if not period_str or index_raw is None:
+        observation_raw = _get_observation_value(row)
+        if not period_str or observation_raw is None:
             continue
         try:
             period = datetime.strptime(period_str, "%Y-%m-%d").date()
         except ValueError as exc:
             raise InflationFetchError(f"Invalid period value '{period_str}'.") from exc
-        index_str = str(index_raw).strip()
-        if not index_str or index_str == "-":
-            # Skip incomplete rows without a numeric index.
+        observation_str = str(observation_raw).strip()
+        if not observation_str or observation_str == "-":
+            # Skip incomplete rows without a numeric observation.
             continue
         try:
-            index_value = Decimal(index_str)
+            value = Decimal(observation_str)
         except Exception as exc:  # noqa: BLE001
-            raise InflationFetchError(f"Invalid index value '{index_raw}'.") from exc
+            raise InflationFetchError(f"Invalid inflation observation value '{observation_raw}'.") from exc
 
-        records.append(
-            InflationRecord(
-                period=period,
-                index_value=index_value,
-                metadata={
-                    "series_code": series_code,
-                    "legend": row.get("LEGEND"),
-                    "status": row.get("OBS_STATUS"),
-                    "trend": row.get("TREND_INDICATOR"),
-                    "source_series": row.get("SERIES"),
-                    "valid_from": row.get("VALID_FROM"),
-                },
+        observations.append(ParsedObservation(period=period, value=value, row=row))
+
+    observations.sort(key=lambda observation: observation.period)
+    return observations
+
+
+def _get_observation_value(row: dict):
+    for key in ("OBS", "OBS_VALUE_AS_IS", "OBS_VALUE_ENTITY"):
+        if key in row and row[key] is not None:
+            return row[key]
+    return None
+
+
+def _validate_index_observations(
+    series_definition: InflationSeriesDefinition,
+    observations: List[ParsedObservation],
+) -> None:
+    for observation in observations:
+        row = observation.row
+        source_series = row.get("SERIES")
+        if source_series != series_definition.series_code:
+            raise InflationFetchError(
+                f"Unexpected ECB series '{source_series}' for '{series_definition.series_code}'."
             )
-        )
+        source_unit = row.get("UNIT")
+        if source_unit != series_definition.expected_unit:
+            raise InflationFetchError(
+                f"Unexpected ECB unit '{source_unit}' for '{series_definition.series_code}'."
+            )
 
-    records.sort(key=lambda r: r.period)
-    return records
+
+def _build_index_records(
+    series_definition: InflationSeriesDefinition,
+    observations: List[ParsedObservation],
+) -> List[InflationRecord]:
+    return [
+        InflationRecord(
+            period=observation.period,
+            index_value=observation.value,
+            metadata=_record_metadata(series_definition, observation),
+        )
+        for observation in observations
+    ]
+
+
+def _record_metadata(
+    series_definition: InflationSeriesDefinition,
+    observation: ParsedObservation,
+    extra: dict | None = None,
+) -> dict:
+    row = observation.row
+    metadata = {
+        "series_code": series_definition.series_code,
+        "observation_kind": series_definition.observation_kind,
+        "legend": row.get("LEGEND"),
+        "status": row.get("OBS_STATUS"),
+        "trend": row.get("TREND_INDICATOR"),
+        "source_series": row.get("SERIES"),
+        "source_unit": row.get("UNIT"),
+        "valid_from": row.get("VALID_FROM"),
+    }
+    if extra:
+        metadata.update(extra)
+    return metadata
 
 
 def _normalize_payload(payload) -> List[dict]:
