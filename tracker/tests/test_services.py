@@ -76,8 +76,14 @@ class BuildSalaryTimelineTests(TestCase):
         self.assertEqual(payload["totalSeries"][4], 1200.0)
 
         self.assertTrue(all(value is not None for value in payload["inflationSeries"]))
+        self.assertTrue(all(value is not None for value in payload["purchasingPowerBaseSeries"]))
+        self.assertTrue(all(value is not None for value in payload["purchasingPowerTotalSeries"]))
+        self.assertTrue(all(value is not None for value in payload["purchasingPowerReferenceSeries"]))
         self.assertTrue(payload["inflationMeta"]["ready"])
         self.assertEqual(payload["inflationMeta"]["baseSalary"], 1000.0)
+        self.assertEqual(payload["purchasingPowerBaseSeries"][0], 1000.0)
+        self.assertLess(payload["purchasingPowerBaseSeries"][-1], payload["baseSeries"][-1])
+        self.assertEqual(payload["purchasingPowerReferenceSeries"], [1000.0] * 6)
 
         self.assertEqual(len(payload["bonusWindows"]), 1)
         window = payload["bonusWindows"][0]
@@ -345,14 +351,18 @@ class FutureSalaryTargetsTests(TestCase):
             last_raise.delta_amount,
             (last_raise.target_salary - self.current_entry.amount).quantize(Decimal("0.01")),
         )
+        self.assertEqual(last_raise.delta_abs_amount, abs(last_raise.delta_amount))
+        self.assertEqual(last_raise.delta_abs_percent, Decimal("1.85"))
         self.assertIsNotNone(last_raise.inflation_percent)
         employer_start = target_map["employer-start"]
         self.assertIsNotNone(employer_start.inflation_percent)
+        self.assertEqual(employer_start.salary_increase_percent, Decimal("50.00"))
 
-    def test_manual_baseline_target_appears_when_preference_set(self):
+    def test_manual_baseline_target_appears_when_manual_mode_active(self):
         self._seed_rates()
+        self.preferences.inflation_baseline_mode = UserPreference.InflationBaselineMode.MANUAL
         self.preferences.inflation_manual_entry = self.first_entry
-        self.preferences.save(update_fields=["inflation_manual_entry"])
+        self.preferences.save(update_fields=["inflation_baseline_mode", "inflation_manual_entry"])
 
         targets, message, _ = build_future_salary_targets(self.user, preferences=self.preferences)
 
@@ -360,3 +370,16 @@ class FutureSalaryTargetsTests(TestCase):
         self.assertIn("manual-baseline", target_map)
         self.assertIsNone(target_map["manual-baseline"].reason)
         self.assertIsNotNone(target_map["manual-baseline"].inflation_percent)
+        self.assertEqual(target_map["manual-baseline"].salary_increase_percent, Decimal("50.00"))
+
+    def test_manual_baseline_target_hidden_when_manual_entry_is_stale(self):
+        self._seed_rates()
+        self.preferences.inflation_baseline_mode = UserPreference.InflationBaselineMode.PER_EMPLOYER
+        self.preferences.inflation_manual_entry = self.first_entry
+        self.preferences.save(update_fields=["inflation_baseline_mode", "inflation_manual_entry"])
+
+        targets, message, _ = build_future_salary_targets(self.user, preferences=self.preferences)
+
+        self.assertIsNone(message)
+        target_map = {target.key: target for target in targets}
+        self.assertNotIn("manual-baseline", target_map)
