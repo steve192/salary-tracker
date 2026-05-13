@@ -25,7 +25,7 @@ PROXYLESS_MIDDLEWARE = [
 ]
 
 
-@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)
+@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE, ALLOWED_HOSTS=["testserver"])
 class DashboardViewTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="dash@example.com", password="pass12345")
@@ -56,7 +56,7 @@ class DashboardViewTests(TestCase):
         self.assertIsNotNone(response.context["future_salary_targets_message"])
 
 
-@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)
+@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE, ALLOWED_HOSTS=["testserver"])
 class AdminPortalViewTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="admin@example.com", password="pass12345", is_admin=True)
@@ -128,7 +128,7 @@ class AdminPortalViewTests(TestCase):
         self.assertTrue(any("downloaded" in msg for msg in msgs))
 
 
-@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)
+@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE, ALLOWED_HOSTS=["testserver"])
 class EmployerViewTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="employer@example.com", password="pass12345")
@@ -153,7 +153,7 @@ class EmployerViewTests(TestCase):
         self.assertFalse(Employer.objects.filter(pk=employer.id).exists())
 
 
-@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE)
+@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE, ALLOWED_HOSTS=["testserver"])
 class ManualBaselineSelectionTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="manual@example.com", password="pass12345")
@@ -183,3 +183,27 @@ class ManualBaselineSelectionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.preferences.refresh_from_db()
         self.assertIsNone(self.preferences.inflation_manual_entry)
+
+
+@override_settings(FORCE_SCRIPT_NAME="", MIDDLEWARE=PROXYLESS_MIDDLEWARE, ALLOWED_HOSTS=["testserver"])
+class SalaryTimelineApiViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="api@example.com", password="pass12345")
+        preferences = UserPreference.objects.create(user=self.user)
+        preferences.is_onboarded = True
+        preferences.save(update_fields=["is_onboarded"])
+
+    def test_requires_authenticated_user(self):
+        response = self.client.get(reverse("salary-timeline-api"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_returns_timeline_payload_for_authenticated_user(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("salary-timeline-api"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("labels", payload)
+        self.assertIn("inflationMeta", payload)
