@@ -1,6 +1,6 @@
 Django==6.0.8
 djangorestframework==3.17.2
-gunicorn==26.0.0
+gunicorn==26.2.0
 whitenoise==6.12.0
 python-dotenv==1.2.2
 requests==2.33.1
