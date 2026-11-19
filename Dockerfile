@@ -1,4 +1,4 @@
-FROM node:24.18.1-slim AS frontend
+FROM node:24.22.3-slim AS frontend
 
 WORKDIR /app
 
@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 COPY static/js ./static/js
 RUN npm ci && npm run build
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ARG BUILD_VERSION="dev"
 ARG VCS_REF="local"
